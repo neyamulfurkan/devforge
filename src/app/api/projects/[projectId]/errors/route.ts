@@ -99,11 +99,20 @@ export async function POST(
     // Generate both prompts — these never throw (promptGenerator handles fallbacks)
     const [identifyPrompt, replacePrompt] = await Promise.all([
       generateErrorIdentifyPrompt(
-        validated.errorOutput,
-        validated.errorType,
-        documentContent
+        {
+          projectName: projectId,
+          errorType: validated.errorType,
+          errorOutput: validated.errorOutput,
+          fileRegistry: '',
+          globalContextDocument: documentContent ?? '',
+        }
       ),
-      generateErrorReplacePrompt(validated.errorOutput, []),
+      generateErrorReplacePrompt({
+        errorOutput: validated.errorOutput,
+        identifiedFiles: '',
+        fileContents: '',
+        globalContextDocument: documentContent ?? '',
+      }),
     ])
 
     const errorSession = await prisma.errorSession.create({
