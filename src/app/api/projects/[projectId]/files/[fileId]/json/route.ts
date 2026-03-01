@@ -24,7 +24,7 @@ import type { ApiResponse, FileWithContent } from '@/types'
  */
 function normalizeImportPath(raw: string): string {
   // Strip @/ alias → src/
-  let p = raw.startsWith('@/') ? 'src/' + raw.slice(2) : raw
+  const p = raw.startsWith('@/') ? 'src/' + raw.slice(2) : raw
 
   // If already has a file extension — return as-is
   if (/\.\w+$/.test(p)) return p
