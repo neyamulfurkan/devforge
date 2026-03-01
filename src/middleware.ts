@@ -1,17 +1,8 @@
-import { getToken } from 'next-auth/jwt'
+import { auth } from '@/lib/auth'
 import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
 
-export default async function middleware(req: NextRequest) {
-  const token = await getToken({
-  req,
-  secret: process.env.NEXTAUTH_SECRET!,
-  salt: process.env.NODE_ENV === 'production' 
-    ? '__Secure-authjs.session-token' 
-    : 'authjs.session-token',
-})
-
-  if (!token?.sub) {
+export default auth((req) => {
+  if (!req.auth?.user?.id) {
     if (req.nextUrl.pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -21,7 +12,7 @@ export default async function middleware(req: NextRequest) {
   }
 
   return NextResponse.next()
-}
+})
 
 export const config = {
   matcher: [
