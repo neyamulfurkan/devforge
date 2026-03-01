@@ -1,0 +1,442 @@
+// prisma/schema.prisma
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ======================== ENUMS ========================
+
+enum FileStatus {
+  EMPTY
+  CODE_PASTED
+  COMPLETE
+  ERROR
+}
+
+enum ProjectStatus {
+  IN_PROGRESS
+  COMPLETE
+  PAUSED
+  ARCHIVED
+}
+
+enum PromptVisibility {
+  PRIVATE
+  PUBLIC
+}
+
+enum ErrorType {
+  TYPESCRIPT
+  BUILD
+  RUNTIME
+  CONSOLE
+  OTHER
+}
+
+enum ErrorSessionStatus {
+  PENDING
+  RESOLVED
+}
+
+enum CollectionVisibility {
+  PRIVATE
+  PUBLIC
+}
+
+enum NotificationChannel {
+  EMAIL
+  IN_APP
+}
+
+// ======================== MODELS ========================
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  name            String
+  passwordHash    String?
+  profileImageUrl String?
+
+  // Google OAuth
+  googleId String? @unique
+
+  // Preferences stored as JSON for flexibility
+  preferences Json @default("{}")
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  lastActiveAt DateTime @default(now())
+
+  // Relations
+  projects       Project[]
+  collections    Collection[]
+  libraryPrompts LibraryPrompt[]
+  sharedProjects SharedProject[]
+  settings       UserSettings?
+  sessions       UserSession[]
+
+  @@index([email])
+}
+
+model UserSession {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+model UserSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // Appearance
+  theme          String @default("dark")
+  accentColor    String @default("#6366f1")
+  sidebarColor   String @default("#111111")
+  fontFamily     String @default("Inter")
+  editorFontSize Int    @default(14)
+  editorTheme    String @default("vs-dark")
+
+  // AI Integration
+  groqApiKey        String?
+  groqDefaultModel  String  @default("llama3-70b-8192")
+  anthropicApiKey   String?
+  customApiEndpoint String?
+  customApiKey      String?
+  customApiModel    String?
+
+  // Notifications (JSON: { email: { projectActivity: bool }, inApp: { ... } })
+  notificationPrefs Json @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PromptTemplate {
+  id     String  @id @default(cuid())
+  userId String? // Null = global default template
+
+  key         String // e.g., 'global_context_generator', 'meta_prompt', 'error_fix_identify'
+  name        String
+  description String
+  content     String @db.Text
+  variables   Json // Array of { name, description, example }
+
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, key])
+  @@index([key])
+  @@index([userId])
+}
+
+model Project {
+  id     String @id @default(cuid())
+  userId String
+
+  name        String
+  description String        @db.Text
+  platformType String       @default("web_app")
+  status      ProjectStatus @default(IN_PROGRESS)
+
+  // Tech stack tags stored as array
+  techStack String[]
+
+  // Counts (denormalized for dashboard display)
+  totalFiles     Int @default(0)
+  completedFiles Int @default(0)
+
+  // Additional notes from project creation
+  additionalNotes String? @db.Text
+
+  // Timestamps
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  lastOpenedAt DateTime @default(now())
+
+  // Relations
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document      ProjectDocument?
+  files         ProjectFile[]
+  errorSessions ErrorSession[]
+  features      ProjectFeature[]
+  sharedProject SharedProject?
+
+  @@index([userId, status])
+  @@index([userId, lastOpenedAt])
+}
+
+model ProjectDocument {
+  id        String @id @default(cuid())
+  projectId String @unique
+
+  // Full raw document text
+  rawContent String @db.Text
+
+  // Parsed sections stored as JSON array of { sectionNumber, title, content, subsections }
+  sections Json @default("[]")
+
+  // Metadata
+  totalSections Int @default(0)
+  totalWords    Int @default(0)
+
+  // Version control
+  currentVersion Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  project  Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions DocumentVersion[]
+
+  @@index([projectId])
+}
+
+model DocumentVersion {
+  id         String @id @default(cuid())
+  documentId String
+
+  versionNumber Int
+  rawContent    String @db.Text
+  sections      Json
+
+  // What triggered this version save
+  triggerEvent  String  // e.g., "manual_edit", "json_appended_FILE_021", "feature_added"
+  changeSummary String? // brief description of what changed
+
+  createdAt DateTime @default(now())
+
+  document ProjectDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId, createdAt])
+}
+
+model ProjectFile {
+  id        String @id @default(cuid())
+  projectId String
+
+  fileNumber String // "001", "002", etc. — 3-digit padded
+  filePath   String // e.g., "src/services/documentParser.ts"
+  fileName   String // e.g., "documentParser.ts"
+  phase      Int // 1-9
+  phaseName  String // "Foundation & Configuration"
+
+  status FileStatus @default(EMPTY)
+
+  // Code content
+  codeContent String? @db.Text
+  lineCount   Int?
+
+  // Prompt for this file
+  filePrompt String? @db.Text
+
+  // JSON summary after generation
+  jsonSummary Json?
+
+  // Dependencies listed in file prompt
+  requiredFiles String[] // Array of file numbers that must be shown to Claude
+
+  // User notes
+  notes String? @db.Text
+
+  // Timestamps
+  codeAddedAt  DateTime?
+  completedAt  DateTime?
+  errorAddedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, filePath])
+  @@unique([projectId, fileNumber])
+  @@index([projectId, status])
+  @@index([projectId, phase])
+}
+
+model ErrorSession {
+  id        String @id @default(cuid())
+  projectId String
+
+  errorType   ErrorType
+  errorOutput String             @db.Text
+  status      ErrorSessionStatus @default(PENDING)
+
+  // Generated prompts
+  identifyPrompt String? @db.Text
+  replacePrompt  String? @db.Text
+
+  // Files identified by Claude in Step 1
+  identifiedFiles String[] // Array of file paths
+
+  // Resolution tracking
+  resolvedAt     DateTime?
+  resolutionNote String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status])
+  @@index([projectId, createdAt])
+}
+
+model ProjectFeature {
+  id        String @id @default(cuid())
+  projectId String
+
+  // Feature description
+  description         String  @db.Text
+  enhancedDescription String? @db.Text // Groq-enhanced version
+
+  // Delta from Claude
+  deltaPrompt  String? @db.Text // Prompt used to get delta
+  deltaOutput  String? @db.Text // Raw Claude output
+  deltaParsed  Json?            // Parsed delta: new files, modified files, document changes
+
+  // Application tracking
+  appliedAt DateTime?
+
+  // New files created for this feature
+  newFiles String[] // Array of file paths
+
+  // Modified files
+  modifiedFiles String[] // Array of file paths
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}
+
+model Collection {
+  id     String @id @default(cuid())
+  userId String
+
+  name        String
+  description String?
+  visibility  CollectionVisibility @default(PRIVATE)
+  sortOrder   Int                  @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prompts CollectionPrompt[]
+
+  @@index([userId, visibility])
+}
+
+model CollectionPrompt {
+  id           String @id @default(cuid())
+  collectionId String
+
+  title      String
+  description String?
+  promptText String           @db.Text
+  aiTool     String? // "claude", "chatgpt", "gemini", "midjourney", etc.
+  category   String?
+  notes      String? @db.Text // Private notes, never public
+
+  visibility PromptVisibility @default(PRIVATE)
+  sortOrder  Int              @default(0)
+
+  // If this prompt is synced to library
+  libraryPromptId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  collection    Collection     @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  libraryPrompt LibraryPrompt? @relation(fields: [libraryPromptId], references: [id])
+
+  @@index([collectionId, visibility])
+}
+
+model LibraryPrompt {
+  id       String @id @default(cuid())
+  authorId String
+
+  title      String
+  description String
+  promptText String @db.Text
+  aiTool     String // "claude", "chatgpt", "gemini", "grok", "midjourney", "dalle", "stable_diffusion", "other"
+  category   String // "development", "design_image", "writing", "marketing", "business", "data", "education", "other"
+
+  // Metrics
+  copyCount   Int @default(0)
+  ratingSum   Int @default(0)
+  ratingCount Int @default(0)
+
+  // Moderation
+  isApproved Boolean @default(true)
+  isActive   Boolean @default(true)
+
+  // Source tracking
+  collectionPromptId String? // Source collection prompt if submitted from collection
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author            User               @relation(fields: [authorId], references: [id])
+  collectionPrompts CollectionPrompt[]
+
+  @@index([aiTool, category])
+  @@index([copyCount])
+  @@index([isApproved, isActive])
+}
+
+model SharedProject {
+  id        String @id @default(cuid())
+  projectId String @unique
+  authorId  String
+
+  // Display info
+  screenshotUrl  String?
+  demoUrl        String?
+  buildTimeHours Int?
+
+  // What to share
+  sharedSections   String[] // Array of section numbers to show
+  shareFilePrompts Boolean  @default(false)
+
+  // Metrics
+  viewCount Int @default(0)
+  copyCount Int @default(0)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id])
+
+  @@index([isActive, createdAt])
+  @@index([authorId])
+}

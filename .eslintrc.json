@@ -1,0 +1,10 @@
+{
+  "extends": ["next/core-web-vitals"],
+  "reportUnusedDisableDirectives": false,
+  "rules": {
+    "no-unused-vars": "off",
+    "no-console": ["warn", { "allow": ["error", "warn"] }],
+    "prefer-const": "error",
+    "react/no-unescaped-entities": "off"
+  }
+}
