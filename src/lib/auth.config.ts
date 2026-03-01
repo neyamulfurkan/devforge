@@ -9,7 +9,13 @@ export const authConfig: NextAuthConfig = {
   providers: [],
   callbacks: {
     authorized({ auth }) {
-      return !!auth?.user?.id
+      return !!auth?.user
+    },
+    async session({ session, token }) {
+      if (token.sub && session.user) {
+        session.user.id = token.sub
+      }
+      return session
     },
   },
 }
