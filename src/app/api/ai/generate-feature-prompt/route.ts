@@ -53,7 +53,7 @@ export async function POST(
     // Verify project ownership
     const project = await prisma.project.findUnique({
       where: { id: projectId },
-      select: { userId: true },
+      select: { userId: true, name: true },
     })
 
     if (!project) {
@@ -78,10 +78,13 @@ export async function POST(
     }
 
     // Generate the feature delta prompt using the full document as context
-    const deltaPrompt = await generateFeatureDeltaPrompt(
+    const deltaPrompt = await generateFeatureDeltaPrompt({
+      projectName: projectId,
       featureDescription,
-      document.rawContent
-    )
+      existingFeatures: '',
+      fileRegistry: '',
+      globalContextDocument: document.rawContent,
+    })
 
     return NextResponse.json({
       data: { deltaPrompt },

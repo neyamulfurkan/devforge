@@ -61,7 +61,7 @@ export async function POST(
     // Verify project ownership
     const project = await prisma.project.findUnique({
       where: { id: projectId },
-      select: { userId: true },
+      select: { userId: true, name: true },
     })
 
     if (!project) {
@@ -82,8 +82,19 @@ export async function POST(
 
     // Generate both prompts in parallel for performance
     const [identifyPrompt, replacePrompt] = await Promise.all([
-      generateErrorIdentifyPrompt(errorOutput, errorType),
-      generateErrorReplacePrompt(errorOutput, []),
+      generateErrorIdentifyPrompt({
+        projectName: project.name ?? projectId,
+        errorType,
+        errorOutput,
+        fileRegistry: '',
+        globalContextDocument: documentSummary,
+      }),
+      generateErrorReplacePrompt({
+        errorOutput,
+        identifiedFiles: '',
+        fileContents: '',
+        globalContextDocument: documentSummary,
+      }),
     ])
 
     return NextResponse.json({
