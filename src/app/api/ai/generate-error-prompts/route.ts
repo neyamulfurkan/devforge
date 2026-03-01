@@ -82,7 +82,7 @@ export async function POST(
 
     // Generate both prompts in parallel for performance
     const [identifyPrompt, replacePrompt] = await Promise.all([
-      generateErrorIdentifyPrompt(errorOutput, errorType, documentSummary),
+      generateErrorIdentifyPrompt(errorOutput, errorType),
       generateErrorReplacePrompt(errorOutput, []),
     ])
 
