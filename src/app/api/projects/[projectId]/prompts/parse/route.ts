@@ -257,6 +257,8 @@ export async function POST(
 
   const { rawOutput } = body
 
+  console.log('rawOutput length received:', rawOutput?.length, 'starts with:', rawOutput?.slice(0, 20))
+
   if (typeof rawOutput !== 'string' || !rawOutput.trim()) {
     return NextResponse.json(
       { error: 'rawOutput is required and must be a non-empty string' },
