@@ -66,7 +66,17 @@ function parseTextBasedOutput(raw: string): SpecArrayItem[] {
   const items: SpecArrayItem[] = []
 
   // Split on FILE NNN: headers (handles letter suffixes like 009b, 017b, 153b)
-  const sections = raw.split(/(?=^FILE\s+\d+[a-zA-Z]?\s*:)/m)
+  // Normalize line endings and strip markdown/bold decorators before splitting
+  const normalized = raw
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/^#+\s*/gm, '')
+    .replace(/^\*\*(FILE)/gm, '$1')
+    .replace(/\*\*\s*$/gm, '')
+    .replace(/^`(FILE)/gm, '$1')
+    .replace(/`\s*$/gm, '')
+
+  const sections = normalized.split(/(?=^FILE\s+\d+[a-zA-Z]?\s*:)/m)
 
   for (const section of sections) {
     const trimmed = section.trim()
@@ -101,11 +111,26 @@ function parseTextBasedOutput(raw: string): SpecArrayItem[] {
 }
 
 function stripCodeFences(raw: string): string {
-  return raw
-    .trim()
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim()
+  let text = raw.trim()
+
+  // Strip any leading markdown code fence (```json, ```typescript, ``` etc.)
+  text = text.replace(/^```[\w]*\s*/i, '').replace(/\s*```$/i, '').trim()
+
+  // If there's a JSON array somewhere, extract everything from first [ to last ]
+  const arrayStart = text.indexOf('[')
+  const arrayEnd = text.lastIndexOf(']')
+  if (arrayStart !== -1 && arrayEnd > arrayStart) {
+    return text.slice(arrayStart, arrayEnd + 1).trim()
+  }
+
+  // If there's a JSON object, extract from first { to last }
+  const objStart = text.indexOf('{')
+  const objEnd = text.lastIndexOf('}')
+  if (objStart !== -1 && objEnd > objStart) {
+    return text.slice(objStart, objEnd + 1).trim()
+  }
+
+  return text
 }
 
 // ─── Helper: parse and validate the JSON array ───────────────────────────────
@@ -122,13 +147,26 @@ function parseSpecArray(raw: string): SpecArrayItem[] {
     return parseTextBasedOutput(stripped)
   }
 
-  if (!Array.isArray(parsed)) {
+  // Handle wrapped formats: { files: [...] }, { data: [...] }, { prompts: [...] }
+  let parsedArray: unknown[]
+
+  if (Array.isArray(parsed)) {
+    parsedArray = parsed
+  } else if (parsed !== null && typeof parsed === 'object') {
+    const wrapper = parsed as Record<string, unknown>
+    const arrayVal = Object.values(wrapper).find((v) => Array.isArray(v))
+    if (arrayVal) {
+      parsedArray = arrayVal as unknown[]
+    } else {
+      throw new Error('Parsed JSON is not an array and contains no array field.')
+    }
+  } else {
     throw new Error('Parsed JSON is not an array. Expected an array of file spec objects.')
   }
 
   const validated: SpecArrayItem[] = []
-  for (let i = 0; i < parsed.length; i++) {
-    const item = parsed[i] as Record<string, unknown>
+  for (let i = 0; i < parsedArray.length; i++) {
+    const item = parsedArray[i] as Record<string, unknown>
 
     if (typeof item.fileNumber !== 'string' || !item.fileNumber.trim()) {
       throw new Error(`Item at index ${i} is missing a valid "fileNumber" string.`)
