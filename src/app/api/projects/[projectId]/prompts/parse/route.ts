@@ -76,7 +76,7 @@ function parseTextBasedOutput(raw: string): SpecArrayItem[] {
     .replace(/^`(FILE)/gm, '$1')
     .replace(/`\s*$/gm, '')
 
-  const sections = normalized.split(/(?=^FILE\s+\d+[a-zA-Z]?\s*:)/m)
+  const sections = normalized.split(/(?=^FILE\s+\d+[a-zA-Z]?\s*[:\-–])/m)
 
   for (const section of sections) {
     const trimmed = section.trim()
@@ -269,7 +269,11 @@ export async function POST(
 
   if (specs.length === 0) {
     return NextResponse.json(
-      { error: 'Parsed spec array is empty — no files to store' },
+      {
+        error:
+          'No file prompts could be detected. Make sure you pasted Claude\'s full response. ' +
+          'The output should start with "FILE 001:" headers or be a JSON array of file spec objects.',
+      },
       { status: 422 }
     )
   }

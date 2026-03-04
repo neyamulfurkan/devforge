@@ -94,13 +94,12 @@ export function useProjectPrompts(projectId: string): UseProjectPromptsReturn {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rawOutput }),
       })
-      if (!res.ok) throw new Error('Failed to parse prompts')
+      const json = await res.json()
       if (!res.ok) {
-        const json = await res.json()
-        throw new Error(json.error ?? 'Failed to parse prompts')
+        throw new Error((json as { error?: string }).error ?? 'Failed to parse prompts')
       }
-      const json: ApiResponse<{ stored: number; fileNumbers: string[] }> = await res.json()
-      return { count: json.data?.stored ?? 0, fileNumbers: json.data?.fileNumbers ?? [] }
+      const typed = json as ApiResponse<{ stored: number; fileNumbers: string[] }>
+      return { count: typed.data?.stored ?? 0, fileNumbers: typed.data?.fileNumbers ?? [] }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['prompts', projectId] })

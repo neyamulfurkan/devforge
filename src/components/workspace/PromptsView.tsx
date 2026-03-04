@@ -293,7 +293,9 @@ export function PromptsView({ projectId }: PromptsViewProps): JSX.Element {
       try {
         const result = await parseAndStore(rawOutput)
         const count = result?.count ?? 0
-        toast.success(`${count} file prompt${count !== 1 ? 's' : ''} stored successfully`)
+        toast.success(`${count} file prompt${count !== 1 ? 's' : ''} stored successfully`, {
+          description: count === 0 ? 'Try pasting Claude\'s full unmodified response.' : undefined,
+        })
         setParseDialogOpen(false)
       } catch {
         toast.error('Failed to parse prompts — check that you pasted Claude\'s full response')
