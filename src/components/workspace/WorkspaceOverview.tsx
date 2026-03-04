@@ -1,10 +1,10 @@
 'use client'
 
 // 1. React imports
-import { useCallback, useState } from 'react'
+import React, { useCallback, useState, useEffect } from 'react'
 
 // 2. Third-party library imports
-import { Copy, FileText, Terminal, Download, AlertCircle, ChevronRight } from 'lucide-react'
+import { Copy, FileText, Terminal, Download, AlertCircle, ChevronRight, Globe, ExternalLink, Check } from 'lucide-react'
 
 // 3. Internal imports — UI components
 import { Button } from '@/components/ui/button'
@@ -98,11 +98,22 @@ export function WorkspaceOverview({
 }: WorkspaceOverviewProps): JSX.Element {
   const [scriptModalOpen, setScriptModalOpen] = useState(false)
   const [isCopying, setIsCopying] = useState(false)
+  const [deploymentUrl, setDeploymentUrl] = useState('')
+  const [isSavingUrl, setIsSavingUrl] = useState(false)
+  const [urlSaved, setUrlSaved] = useState(false)
+  const [urlError, setUrlError] = useState('')
 
-  const { project } = useProject(projectId)
+  const { project, refetch } = useProject(projectId)
   const { files } = useFiles(projectId)
   const { pendingCount } = useErrors(projectId)
   const { document: projectDocument } = useDocument(projectId)
+
+  // ── Sync deploymentUrl from project into local state on load ─────────────
+  useEffect(() => {
+    if (project?.deploymentUrl) {
+      setDeploymentUrl(project.deploymentUrl)
+    }
+  }, [project?.deploymentUrl])
 
   // ── Derived data ──────────────────────────────────────────────────────────
 
@@ -160,6 +171,31 @@ export function WorkspaceOverview({
   const handleExportZip = useCallback(() => {
     onTabChange('export')
   }, [onTabChange])
+
+  const handleSaveDeploymentUrl = useCallback(async () => {
+    setUrlError('')
+    const trimmed = deploymentUrl.trim()
+    if (trimmed && !/^https?:\/\/.+/.test(trimmed)) {
+      setUrlError('URL must start with http:// or https://')
+      return
+    }
+    setIsSavingUrl(true)
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deploymentUrl: trimmed || null }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      setUrlSaved(true)
+      refetch?.()
+      setTimeout(() => setUrlSaved(false), 2000)
+    } catch {
+      setUrlError('Failed to save URL. Please try again.')
+    } finally {
+      setIsSavingUrl(false)
+    }
+  }, [deploymentUrl, projectId, refetch])
 
   // Files for terminal script modal
   const extractedFiles: ExtractedFile[] = files.map((f) => ({
@@ -291,6 +327,63 @@ export function WorkspaceOverview({
           onClick={handleExportZip}
         />
       </div>
+
+      {/* ── Deployment URL ────────────────────────────────────────────── */}
+      <Card className="border-[var(--border-subtle)] bg-[var(--bg-tertiary)]">
+        <CardHeader className="border-b border-[var(--border-subtle)] px-5 py-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+            <Globe className="h-4 w-4 text-[var(--accent-primary)]" />
+            Live Deployment
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-5">
+          {project?.deploymentUrl ? (
+            <div className="flex flex-col gap-3">
+              <a
+                href={project.deploymentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 rounded-lg border border-[var(--accent-border)] bg-[var(--accent-light)] px-4 py-3 text-sm font-medium text-[var(--accent-primary)] transition-colors hover:underline"
+              >
+                <ExternalLink className="h-4 w-4 flex-shrink-0" />
+                <span className="truncate">{project.deploymentUrl}</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => setDeploymentUrl(project.deploymentUrl ?? '')}
+                className="self-start text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] underline"
+              >
+                Change URL
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-[var(--text-secondary)]">
+                Paste your deployed project URL (e.g. Vercel, Netlify, Railway).
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={deploymentUrl}
+                  onChange={(e) => { setDeploymentUrl(e.target.value); setUrlError('') }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveDeploymentUrl()}
+                  placeholder="https://your-app.vercel.app"
+                  className="flex-1 rounded-lg border border-[var(--border-default)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:border-[var(--accent-primary)] focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveDeploymentUrl}
+                  disabled={isSavingUrl || !deploymentUrl.trim()}
+                  className="flex items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-4 py-2 text-sm font-medium text-white transition-all hover:bg-[var(--accent-hover)] disabled:opacity-50 active:scale-95"
+                >
+                  {urlSaved ? <Check className="h-4 w-4" /> : isSavingUrl ? '…' : 'Save'}
+                </button>
+              </div>
+              {urlError && <p className="text-xs text-[var(--status-error)]">{urlError}</p>}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* ── Row 4: Pending errors card (conditional) ───────────────────── */}
       {pendingCount > 0 && (

@@ -1,7 +1,7 @@
 'use client'
 
 // 3. Third-party library imports
-import { Folder, ArrowRight } from 'lucide-react'
+import { Folder, ArrowRight, ExternalLink } from 'lucide-react'
 
 // 4. Internal imports — UI components
 import { Card, CardContent } from '@/components/ui/card'
@@ -119,6 +119,20 @@ export function ProjectCard({ project, onOpen }: ProjectCardProps): JSX.Element 
               </span>
             )}
           </div>
+        )}
+
+        {/* Deployment link (if set) */}
+        {project.deploymentUrl && (
+          <a
+            href={project.deploymentUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-1.5 truncate rounded-md border border-[var(--accent-border)] bg-[var(--accent-light)] px-2.5 py-1 text-xs font-medium text-[var(--accent-primary)] hover:underline"
+          >
+            <ExternalLink className="h-3 w-3 flex-shrink-0" />
+            <span className="truncate">Live Site</span>
+          </a>
         )}
 
         {/* Footer: last modified + open button */}
