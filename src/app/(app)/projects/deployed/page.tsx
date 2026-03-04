@@ -67,20 +67,9 @@ function CardSkeleton(): JSX.Element {
 
 // ─── Preview Frame ────────────────────────────────────────────────────────────
 
-const IFRAME_BLOCKED_HOSTS = ['vercel.app', 'netlify.app', 'github.io', 'fly.dev', 'onrender.com']
-
-function isIframeBlocked(url: string): boolean {
-  try {
-    const host = new URL(url).hostname
-    return IFRAME_BLOCKED_HOSTS.some((h) => host.endsWith(h))
-  } catch {
-    return false
-  }
-}
-
 function SitePreview({ url, name }: { url: string; name: string }): JSX.Element {
   const [loaded, setLoaded] = useState(false)
-  const [errored, setErrored] = useState(isIframeBlocked(url))
+  const [errored, setErrored] = useState(false)
   const { label, color } = getPlatformLabel(url)
 
   // X-Frame-Options blocks don't fire onError — detect by checking
@@ -128,7 +117,20 @@ function SitePreview({ url, name }: { url: string; name: string }): JSX.Element 
               'absolute inset-0 w-[200%] h-[200%] origin-top-left scale-50 border-0 pointer-events-none transition-opacity duration-500',
               loaded ? 'opacity-100' : 'opacity-0'
             )}
-            onLoad={() => setLoaded(true)}
+            onLoad={(e) => {
+              try {
+                const doc = (e.target as HTMLIFrameElement).contentDocument
+                if (!doc || doc.body === null) {
+                  setErrored(true)
+                } else {
+                  setLoaded(true)
+                }
+              } catch {
+                // Cross-origin access throws — means it loaded but is blocked
+                // This actually means it rendered — show it
+                setLoaded(true)
+              }
+            }}
             onError={() => setErrored(true)}
             sandbox="allow-scripts allow-same-origin"
             loading="lazy"
