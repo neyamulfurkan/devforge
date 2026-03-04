@@ -36,6 +36,7 @@ export function MobileBottomNav(): JSX.Element {
 
   const isActive = (href: string): boolean => {
     if (href === '/dashboard') return pathname === '/dashboard'
+    if (href === '/projects') return pathname === '/projects' || (pathname.startsWith('/projects') && !pathname.startsWith('/projects/deployed'))
     return pathname.startsWith(href)
   }
 

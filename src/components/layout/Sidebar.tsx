@@ -18,6 +18,7 @@ import {
   LogOut,
   Zap,
   ChevronRight,
+  Rocket,
 } from 'lucide-react'
 
 // 4. Internal imports — hooks
@@ -37,6 +38,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/projects', label: 'Projects', icon: FolderOpen },
+  { href: '/projects/deployed', label: 'Deployed', icon: Rocket },
   { href: '/library', label: 'Prompt Library', icon: BookOpen },
   { href: '/collections', label: 'My Collections', icon: Bookmark },
   { href: '/settings', label: 'Settings', icon: Settings },
@@ -60,6 +62,7 @@ export function Sidebar(): JSX.Element {
 
   const isActive = (href: string): boolean => {
     if (href === '/dashboard') return pathname === '/dashboard'
+    if (href === '/projects') return pathname === '/projects' || (pathname.startsWith('/projects') && !pathname.startsWith('/projects/deployed'))
     return pathname.startsWith(href)
   }
 
