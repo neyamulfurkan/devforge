@@ -116,14 +116,20 @@ function stripCodeFences(raw: string): string {
   // Strip any leading markdown code fence (```json, ```typescript, ``` etc.)
   text = text.replace(/^```[\w]*\s*/i, '').replace(/\s*```$/i, '').trim()
 
-  // If there's a JSON array somewhere, extract everything from first [ to last ]
+  // If it already starts with [ or {, return as-is — don't try to
+  // re-extract by indexOf/lastIndexOf because nested [] inside the
+  // JSON values (e.g. "requiredFiles": []) would corrupt the slice.
+  if (text.startsWith('[') || text.startsWith('{')) {
+    return text
+  }
+
+  // Only extract by bracket search if there's leading prose before the JSON
   const arrayStart = text.indexOf('[')
   const arrayEnd = text.lastIndexOf(']')
   if (arrayStart !== -1 && arrayEnd > arrayStart) {
     return text.slice(arrayStart, arrayEnd + 1).trim()
   }
 
-  // If there's a JSON object, extract from first { to last }
   const objStart = text.indexOf('{')
   const objEnd = text.lastIndexOf('}')
   if (objStart !== -1 && objEnd > objStart) {
@@ -265,6 +271,18 @@ export async function POST(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to parse spec array'
     return NextResponse.json({ error: message }, { status: 422 })
+  }
+
+  // DEBUG — remove after diagnosis
+  if (specs.length === 0) {
+    const first300 = rawOutput.slice(0, 300)
+    const lines = rawOutput.split('\n').slice(0, 10).join(' | ')
+    return NextResponse.json(
+      {
+        error: `No files detected. First 300 chars: ${first300} | First 10 lines: ${lines}`,
+      },
+      { status: 422 }
+    )
   }
 
   if (specs.length === 0) {
