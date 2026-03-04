@@ -72,18 +72,6 @@ function SitePreview({ url, name }: { url: string; name: string }): JSX.Element 
   const [errored, setErrored] = useState(false)
   const { label, color } = getPlatformLabel(url)
 
-  // X-Frame-Options blocks don't fire onError — detect by checking
-  // if the iframe content is accessible after load
-  const handleLoad = () => {
-    try {
-      // If frame was blocked, contentDocument is null or throws
-      setLoaded(true)
-    } catch {
-      setErrored(true)
-    }
-    setLoaded(true)
-  }
-
   return (
     <div className="relative h-44 w-full overflow-hidden bg-[var(--bg-quaternary)] rounded-t-2xl">
       {/* Platform badge */}
@@ -117,20 +105,7 @@ function SitePreview({ url, name }: { url: string; name: string }): JSX.Element 
               'absolute inset-0 w-[200%] h-[200%] origin-top-left scale-50 border-0 pointer-events-none transition-opacity duration-500',
               loaded ? 'opacity-100' : 'opacity-0'
             )}
-            onLoad={(e) => {
-              try {
-                const doc = (e.target as HTMLIFrameElement).contentDocument
-                if (!doc || doc.body === null) {
-                  setErrored(true)
-                } else {
-                  setLoaded(true)
-                }
-              } catch {
-                // Cross-origin access throws — means it loaded but is blocked
-                // This actually means it rendered — show it
-                setLoaded(true)
-              }
-            }}
+            onLoad={() => setLoaded(true)}
             onError={() => setErrored(true)}
             sandbox="allow-scripts allow-same-origin"
             loading="lazy"
