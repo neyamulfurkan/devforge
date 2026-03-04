@@ -95,6 +95,7 @@ export async function PATCH(
         ...(validated.status !== undefined && { status: validated.status }),
         ...(validated.techStack !== undefined && { techStack: validated.techStack }),
         ...(validated.additionalNotes !== undefined && { additionalNotes: validated.additionalNotes }),
+        ...(validated.deploymentUrl !== undefined && { deploymentUrl: validated.deploymentUrl }),
         updatedAt: new Date(),
       },
     })

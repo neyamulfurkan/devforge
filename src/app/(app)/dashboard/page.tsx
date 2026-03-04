@@ -9,7 +9,7 @@ import Link from 'next/link'
 
 // 3. Third-party library imports
 import { useQuery } from '@tanstack/react-query'
-import { FolderOpen, Plus, FileCode, AlertCircle, Bookmark } from 'lucide-react'
+import { FolderOpen, Plus, FileCode, AlertCircle, Bookmark, Rocket } from 'lucide-react'
 
 // 4. Internal imports — UI components
 import { Button } from '@/components/ui/button'
@@ -215,14 +215,27 @@ export default function DashboardPage(): JSX.Element {
                 <h2 className="text-base font-semibold text-[var(--text-primary)]">
                   Active Projects
                 </h2>
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                >
-                  <Link href="/projects">View all</Link>
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    asChild
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  >
+                    <Link href="/projects/deployed" className="flex items-center gap-1.5">
+                      <Rocket className="h-3.5 w-3.5" />
+                      Deployed
+                    </Link>
+                  </Button>
+                  <Button
+                    asChild
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  >
+                    <Link href="/projects">View all</Link>
+                  </Button>
+                </div>
               </div>
             )}
 

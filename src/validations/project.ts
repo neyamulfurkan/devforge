@@ -11,6 +11,7 @@ export const createProjectSchema = z.object({
   visibility: z.enum(['public', 'private']),
   techStack: z.array(z.string()).optional().default([]),
   additionalNotes: z.string().optional(),
+  deploymentUrl: z.string().url().nullable().optional(),
 })
 
 // 3. updateProjectSchema
