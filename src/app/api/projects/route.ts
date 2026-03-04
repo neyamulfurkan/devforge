@@ -43,6 +43,7 @@ export async function GET(
         totalFiles: true,
         completedFiles: true,
         additionalNotes: true,
+        deploymentUrl: true,
         createdAt: true,
         updatedAt: true,
         lastOpenedAt: true,
