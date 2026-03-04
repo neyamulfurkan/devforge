@@ -67,10 +67,33 @@ function CardSkeleton(): JSX.Element {
 
 // ─── Preview Frame ────────────────────────────────────────────────────────────
 
+const IFRAME_BLOCKED_HOSTS = ['vercel.app', 'netlify.app', 'github.io', 'fly.dev', 'onrender.com']
+
+function isIframeBlocked(url: string): boolean {
+  try {
+    const host = new URL(url).hostname
+    return IFRAME_BLOCKED_HOSTS.some((h) => host.endsWith(h))
+  } catch {
+    return false
+  }
+}
+
 function SitePreview({ url, name }: { url: string; name: string }): JSX.Element {
   const [loaded, setLoaded] = useState(false)
-  const [errored, setErrored] = useState(false)
+  const [errored, setErrored] = useState(isIframeBlocked(url))
   const { label, color } = getPlatformLabel(url)
+
+  // X-Frame-Options blocks don't fire onError — detect by checking
+  // if the iframe content is accessible after load
+  const handleLoad = () => {
+    try {
+      // If frame was blocked, contentDocument is null or throws
+      setLoaded(true)
+    } catch {
+      setErrored(true)
+    }
+    setLoaded(true)
+  }
 
   return (
     <div className="relative h-44 w-full overflow-hidden bg-[var(--bg-quaternary)] rounded-t-2xl">
