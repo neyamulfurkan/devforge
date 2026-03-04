@@ -21,26 +21,6 @@ interface ParseResult {
   fileNumbers: string[]
 }
 
-// ─── Section 5.11 parsing contract ───────────────────────────────────────────
-//
-// The rawOutput coming in is Claude's response to the meta-prompt.
-// It is a JSON array of per-file spec objects, each with a "fileNumber" field.
-// This route:
-//   1. Strips markdown code fences if present (Claude sometimes wraps in ```json)
-//   2. Parses the JSON array
-//   3. Extracts fileNumber → filePrompt text per entry
-//   4. Bulk-upserts into ProjectFile.filePrompt for each file in this project
-//
-// The "prompt" stored per file is the assembled file_specific_prompt string,
-// which promptGenerator.generateFilePrompt() produces. However this route
-// receives the raw meta-prompt JSON output (spec array), so it stores the
-// specSummary + keyLogic as the filePrompt seed — the workspace assembles the
-// full prompt client-side from this data when the user clicks "Copy Prompt".
-//
-// Each item in the JSON array must have at minimum:
-//   { fileNumber: string, filePath: string, specSummary: string, keyLogic: string,
-//     phase: number, phaseName: string, requiredFiles: string[] }
-
 interface SpecArrayItem {
   fileNumber: string
   filePath: string
@@ -51,22 +31,11 @@ interface SpecArrayItem {
   keyLogic: string
 }
 
-// ─── Helper: strip markdown fences ───────────────────────────────────────────
+// ─── Helper: parse plain-text FILE NNN: output ───────────────────────────────
 
-/**
- * Parse plain-text meta-prompt output where Claude separates files using headers like:
- *   FILE 001: src/app/page.tsx
- *   ---
- *   <prompt content>
- *
- *   FILE 002: src/lib/utils.ts
- *   ...
- */
 function parseTextBasedOutput(raw: string): SpecArrayItem[] {
   const items: SpecArrayItem[] = []
 
-  // Split on FILE NNN: headers (handles letter suffixes like 009b, 017b, 153b)
-  // Normalize line endings and strip markdown/bold decorators before splitting
   const normalized = raw
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
@@ -82,7 +51,6 @@ function parseTextBasedOutput(raw: string): SpecArrayItem[] {
     const trimmed = section.trim()
     if (!trimmed) continue
 
-    // Extract file number and path from header line
     const headerMatch = trimmed.match(/^FILE\s+(\d+[a-zA-Z]?)\s*:\s*(.+)$/m)
     if (!headerMatch) continue
 
@@ -92,7 +60,6 @@ function parseTextBasedOutput(raw: string): SpecArrayItem[] {
     const fileNumber = numPart.padStart(3, '0') + letterPart
     const filePath = headerMatch[2].trim().split(/\s+[—–-]\s+/)[0]?.trim() ?? headerMatch[2].trim()
 
-    // Everything after the header line is the prompt content
     const headerEnd = trimmed.indexOf('\n')
     const content = headerEnd >= 0 ? trimmed.slice(headerEnd + 1).trim() : ''
 
@@ -110,15 +77,16 @@ function parseTextBasedOutput(raw: string): SpecArrayItem[] {
   return items
 }
 
+// ─── Helper: strip markdown fences ───────────────────────────────────────────
+
 function stripCodeFences(raw: string): string {
   let text = raw.trim()
 
   // Strip any leading markdown code fence (```json, ```typescript, ``` etc.)
   text = text.replace(/^```[\w]*\s*/i, '').replace(/\s*```$/i, '').trim()
 
-  // If it already starts with [ or {, return as-is — don't try to
-  // re-extract by indexOf/lastIndexOf because nested [] inside the
-  // JSON values (e.g. "requiredFiles": []) would corrupt the slice.
+  // If it already starts with [ or {, return as-is — do NOT re-slice by bracket
+  // because nested [] inside values (e.g. "requiredFiles": []) corrupt the slice
   if (text.startsWith('[') || text.startsWith('{')) {
     return text
   }
@@ -144,16 +112,13 @@ function stripCodeFences(raw: string): string {
 function parseSpecArray(raw: string): SpecArrayItem[] {
   const stripped = stripCodeFences(raw)
 
-  // Try JSON array first
   let parsed: unknown
   try {
     parsed = JSON.parse(stripped)
   } catch {
-    // Fall back to text-based parsing for plain-text meta-prompt output
     return parseTextBasedOutput(stripped)
   }
 
-  // Handle wrapped formats: { files: [...] }, { data: [...] }, { prompts: [...] }
   let parsedArray: unknown[]
 
   if (Array.isArray(parsed)) {
@@ -197,9 +162,7 @@ function parseSpecArray(raw: string): SpecArrayItem[] {
   return validated
 }
 
-// ─── Helper: build filePrompt text from a spec item ──────────────────────────
-// Stored as the seed prompt — the workspace UI assembles the full prompt
-// by calling generateFilePrompt() client-side or at copy time.
+// ─── Helper: build filePrompt seed ───────────────────────────────────────────
 
 function buildFilePromptSeed(item: SpecArrayItem): string {
   const lines: string[] = [
@@ -233,7 +196,6 @@ export async function POST(
 
   const { projectId } = await params
 
-  // Verify project ownership
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     select: { id: true, userId: true },
@@ -247,7 +209,6 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Parse request body
   let body: ParseRequestBody
   try {
     body = (await request.json()) as ParseRequestBody
@@ -257,8 +218,6 @@ export async function POST(
 
   const { rawOutput } = body
 
-  console.log('rawOutput length received:', rawOutput?.length, 'starts with:', rawOutput?.slice(0, 20))
-
   if (typeof rawOutput !== 'string' || !rawOutput.trim()) {
     return NextResponse.json(
       { error: 'rawOutput is required and must be a non-empty string' },
@@ -266,7 +225,6 @@ export async function POST(
     )
   }
 
-  // Parse spec array
   let specs: SpecArrayItem[]
   try {
     specs = parseSpecArray(rawOutput)
@@ -275,30 +233,13 @@ export async function POST(
     return NextResponse.json({ error: message }, { status: 422 })
   }
 
-  // DEBUG — remove after diagnosis
   if (specs.length === 0) {
-    const first300 = rawOutput.slice(0, 300)
-    const lines = rawOutput.split('\n').slice(0, 10).join(' | ')
     return NextResponse.json(
-      {
-        error: `No files detected. First 300 chars: ${first300} | First 10 lines: ${lines}`,
-      },
+      { error: 'No file prompts could be detected. Ensure you pasted a JSON array or FILE NNN: formatted output.' },
       { status: 422 }
     )
   }
 
-  if (specs.length === 0) {
-    return NextResponse.json(
-      {
-        error:
-          'No file prompts could be detected. Make sure you pasted Claude\'s full response. ' +
-          'The output should start with "FILE 001:" headers or be a JSON array of file spec objects.',
-      },
-      { status: 422 }
-    )
-  }
-
-  // Fetch all existing project files in one query
   const existingFiles = await prisma.projectFile.findMany({
     where: { projectId },
     select: { id: true, fileNumber: true, filePath: true },
@@ -307,12 +248,10 @@ export async function POST(
   const fileByNumber = new Map(existingFiles.map((f) => [f.fileNumber, f]))
   const fileByPath = new Map(existingFiles.map((f) => [f.filePath, f]))
 
-  // Build upsert operations
   const storedFileNumbers: string[] = []
 
   for (const spec of specs) {
     const filePrompt = buildFilePromptSeed(spec)
-
     const existing = fileByNumber.get(spec.fileNumber) ?? fileByPath.get(spec.filePath)
 
     if (existing) {
