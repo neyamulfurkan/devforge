@@ -33,7 +33,7 @@ import { cn } from '@/lib/utils'
 export default function CollectionsPage(): JSX.Element {
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false)
-  const [createModalOpen, setCreateModalOpen] = useState(false)
+  
 
   const { collections, isLoading, createCollection } = useCollections()
 
@@ -48,22 +48,21 @@ export default function CollectionsPage(): JSX.Element {
       <PageContainer>
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">My Collections</h1>
-          <Button
-            type="button"
-            onClick={() => setCreateModalOpen(true)}
-            className="gap-2 bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-hover)] active:scale-95 transition-all duration-150"
-          >
-            <Plus className="h-4 w-4" />
-            New Collection
-          </Button>
         </div>
         <EmptyState
           icon={FolderOpen}
           title="No collections yet"
           description="Create your first collection to start organizing your prompts."
-          action={{ label: 'Create Collection', onClick: () => setCreateModalOpen(true) }}
+          action={{
+            label: 'Create Collection',
+            onClick: async () => {
+              const name = window.prompt('Collection name:')
+              if (name?.trim()) {
+                await createCollection(name.trim())
+              }
+            },
+          }}
         />
-        
       </PageContainer>
     )
   }
