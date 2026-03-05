@@ -6,7 +6,7 @@ import { useState, useCallback } from 'react'
 // 2. Third-party library imports
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical, Edit2, Trash2, Globe, Lock } from 'lucide-react'
+import { GripVertical, Edit2, Trash2, Globe, Lock, Pin, PinOff } from 'lucide-react'
 import { toast } from 'sonner'
 
 // 3. Internal imports — UI components
@@ -19,6 +19,7 @@ import { ConfirmModal } from '@/components/shared/ConfirmModal'
 
 // 5. Internal imports — hooks, utils, types
 import { useCollections } from '@/hooks/useCollections'
+import { useQuickPrompts } from '@/hooks/useQuickPrompts'
 import { cn, truncate } from '@/lib/utils'
 import { AI_TOOL_COLOR_MAP, AI_TOOLS } from '@/lib/constants'
 import type { CollectionPrompt } from '@/types'
@@ -38,6 +39,8 @@ export function CollectionPromptCard({
   const [isTogglingVisibility, setIsTogglingVisibility] = useState(false)
 
   const { updatePrompt, deletePrompt } = useCollections()
+  const { handlePin, isPinned } = useQuickPrompts()
+  const pinned = isPinned(prompt.id)
 
   // ─── dnd-kit sortable ────────────────────────────────────────────────────
   const {
@@ -153,6 +156,33 @@ export function CollectionPromptCard({
 
         {/* Actions */}
         <div className="flex flex-shrink-0 items-center gap-1">
+          {/* Pin to Quick Prompts */}
+          <button
+            type="button"
+            onClick={() =>
+              handlePin({
+                id: prompt.id,
+                title: prompt.title,
+                promptText: prompt.promptText,
+                aiTool: prompt.aiTool ?? null,
+                category: prompt.category ?? null,
+                sourceType: 'collection',
+                sourceId: prompt.collectionId,
+              })
+            }
+            aria-label={pinned ? 'Unpin from Quick Prompts' : 'Pin to Quick Prompts'}
+            className={cn(
+              'flex items-center justify-center rounded-md w-7 h-7 transition-all duration-150',
+              'min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]',
+              pinned
+                ? 'text-[var(--accent-primary)] bg-[var(--accent-light)]'
+                : 'text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] hover:bg-[var(--accent-light)]'
+            )}
+          >
+            {pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+          </button>
+
           {/* Copy button — always visible */}
           <CopyButton
             value={prompt.promptText}

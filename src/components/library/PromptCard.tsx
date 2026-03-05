@@ -4,7 +4,7 @@
 import { useState, useCallback } from 'react'
 
 // 2. Third-party library imports
-import { Bookmark, BookmarkCheck, Check, ChevronDown, ChevronUp, Copy, Star, Trash2 } from 'lucide-react'
+import { Bookmark, BookmarkCheck, Check, ChevronDown, ChevronUp, Copy, Star, Trash2, Pin, PinOff } from 'lucide-react'
 
 // 3. Internal imports — UI components
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,7 @@ import { CopyButton } from '@/components/shared/CopyButton'
 
 // 5. Internal imports — hooks, constants, utils, types
 import { useLibrary } from '@/hooks/useLibrary'
+import { useQuickPrompts } from '@/hooks/useQuickPrompts'
 import { SaveToCollectionModal } from '@/components/library/SaveToCollectionModal'
 import { AI_TOOL_COLOR_MAP, AI_TOOLS } from '@/lib/constants'
 import { copyToClipboard, cn } from '@/lib/utils'
@@ -68,6 +69,8 @@ export function PromptCard({ prompt, currentUserId, onDelete }: PromptCardProps)
   const [saveModalOpen, setSaveModalOpen] = useState(false)
 
   const { copyPrompt } = useLibrary()
+  const { handlePin, isPinned } = useQuickPrompts()
+  const pinned = isPinned(prompt.id)
 
   // Resolve AI tool label and color
   const toolMeta = AI_TOOLS.find((t) => t.value === prompt.aiTool)
@@ -110,7 +113,7 @@ export function PromptCard({ prompt, currentUserId, onDelete }: PromptCardProps)
           onClick={handleDelete}
           aria-label="Delete prompt"
           className={cn(
-            'absolute right-12 top-3 flex h-8 w-8 items-center justify-center rounded-md',
+            'absolute right-20 top-3 flex h-8 w-8 items-center justify-center rounded-md',
             'text-[var(--text-tertiary)] transition-colors duration-150',
             'hover:text-red-400 hover:bg-red-400/10'
           )}
@@ -118,6 +121,33 @@ export function PromptCard({ prompt, currentUserId, onDelete }: PromptCardProps)
           <Trash2 className="w-4 h-4" />
         </button>
       )}
+
+      {/* Pin to Quick Prompts */}
+      <button
+        type="button"
+        onClick={() =>
+          handlePin({
+            id: prompt.id,
+            title: prompt.title,
+            promptText: prompt.promptText,
+            aiTool: prompt.aiTool,
+            category: prompt.category,
+            sourceType: 'library',
+            sourceId: prompt.id,
+          })
+        }
+        aria-label={pinned ? 'Unpin from Quick Prompts' : 'Pin to Quick Prompts'}
+        className={cn(
+          'absolute right-12 top-3 flex h-8 w-8 items-center justify-center rounded-md',
+          'transition-all duration-150',
+          'min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0',
+          pinned
+            ? 'text-[var(--accent-primary)] bg-[var(--accent-light)]'
+            : 'text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] hover:bg-[var(--accent-light)]'
+        )}
+      >
+        {pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+      </button>
 
       {/* Bookmark — top-right */}
       <button

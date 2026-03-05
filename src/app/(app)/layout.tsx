@@ -7,6 +7,7 @@ import { authOptions } from '@/lib/auth'
 
 // 3. Internal imports — layout components
 import AppShell from '@/components/layout/AppShell'
+import { QuickPromptsPanel } from '@/components/shared/QuickPromptsPanel'
 
 // 4. Local types
 interface AppLayoutProps {
@@ -20,5 +21,10 @@ export default async function AppLayout({ children }: AppLayoutProps): Promise<J
     redirect('/login')
   }
 
-  return <AppShell>{children}</AppShell>
+  return (
+    <AppShell>
+      {children}
+      <QuickPromptsPanel />
+    </AppShell>
+  )
 }

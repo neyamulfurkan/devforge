@@ -172,6 +172,24 @@ export interface VersionSummary {
 }
 
 // 12. Global search result shape
+export interface PinnedPrompt {
+  id: string
+  title: string
+  promptText: string
+  aiTool: string | null
+  category: string | null
+  sourceType: 'library' | 'collection'
+  sourceId: string
+  pinnedAt: number
+}
+
+export interface QuickPanelPosition {
+  x: number
+  y: number
+}
+
+export type PanelDock = 'free' | 'left' | 'right'
+
 export interface SearchResult {
   files: Array<{ id: string; filePath: string; fileName: string; projectId: string }>
   collections: Array<{ id: string; name: string }>

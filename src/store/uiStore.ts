@@ -13,6 +13,7 @@ interface UIState {
   activeModal: string | null
   toasts: Toast[]
   mobileNavVisible: boolean
+  quickPanelVisible: boolean
 }
 
 interface UIActions {
@@ -22,6 +23,7 @@ interface UIActions {
   closeModal: () => void
   addToast: (toast: Omit<Toast, 'id'>) => void
   removeToast: (id: string) => void
+  toggleQuickPanel: () => void
 }
 
 export const useUIStore = create<UIState & UIActions>((set) => ({
@@ -29,6 +31,7 @@ export const useUIStore = create<UIState & UIActions>((set) => ({
   activeModal: null,
   toasts: [],
   mobileNavVisible: true,
+  quickPanelVisible: false,
 
   toggleSidebar: () =>
     set((state) => ({ sidebarOpen: !state.sidebarOpen })),
@@ -54,4 +57,7 @@ export const useUIStore = create<UIState & UIActions>((set) => ({
     set((state) => ({
       toasts: state.toasts.filter((t) => t.id !== id),
     })),
+
+  toggleQuickPanel: () =>
+    set((state) => ({ quickPanelVisible: !state.quickPanelVisible })),
 }))
