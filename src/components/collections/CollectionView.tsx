@@ -1,7 +1,7 @@
 'use client'
 
 // 1. React imports
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
 // 2. Third-party library imports
 import {
@@ -180,11 +180,9 @@ export function CollectionView({ collectionId }: CollectionViewProps): JSX.Eleme
 
   // Keep localPrompts in sync when server data changes (e.g. after add/delete)
   // Reset optimistic order whenever prompts.length changes or ids change
-  const promptIds = prompts.map((p) => p.id).join(',')
-  // We intentionally use a string comparison to detect changes without exhaustive-deps
-  useState(() => {
+  useEffect(() => {
     setLocalPrompts(null)
-  })
+  }, [prompts])
 
   // ─── Handlers ────────────────────────────────────────────────────────────
   const handleRename = useCallback(
