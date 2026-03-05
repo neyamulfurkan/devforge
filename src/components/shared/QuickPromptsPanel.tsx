@@ -3,63 +3,55 @@
 import {
   useState,
   useRef,
-  useEffect,
   useCallback,
   useLayoutEffect,
 } from 'react'
 import {
   Pin,
-  PinOff,
   Copy,
   Check,
-  ChevronDown,
-  ChevronUp,
+  ChevronRight,
   X,
   Zap,
-  GripHorizontal,
   Trash2,
-  Layers,
   ArrowLeftToLine,
   ArrowRightToLine,
   Maximize2,
+  ChevronDown,
+  LayoutGrid,
+  List,
+  Plus,
 } from 'lucide-react'
-import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'sonner'
 import { useQuickPromptsStore } from '@/store/quickPromptsStore'
 import { AI_TOOL_COLOR_MAP } from '@/lib/constants'
 import { copyToClipboard, cn } from '@/lib/utils'
 import type { PinnedPrompt } from '@/store/quickPromptsStore'
 
-const PANEL_WIDTH = 320
-const PANEL_COLLAPSED_WIDTH = 56
+const PANEL_WIDTH = 340
+const PANEL_COLLAPSED_WIDTH = 52
 const SNAP_THRESHOLD = 80
 
-function PromptPill({
+function PromptRow({
   prompt,
-  isActive,
-  onActivate,
+  isExpanded,
+  onToggleExpand,
   onUnpin,
 }: {
   prompt: PinnedPrompt
-  isActive: boolean
-  onActivate: () => void
+  isExpanded: boolean
+  onToggleExpand: () => void
   onUnpin: () => void
 }) {
   const [copied, setCopied] = useState(false)
-  const toolColor = prompt.aiTool
-    ? (AI_TOOL_COLOR_MAP[prompt.aiTool] ?? '')
-    : ''
 
-  const handleCopy = useCallback(
-    async (e: React.MouseEvent) => {
-      e.stopPropagation()
-      await copyToClipboard(prompt.promptText)
-      setCopied(true)
-      toast.success(`Copied: ${prompt.title}`)
-      setTimeout(() => setCopied(false), 2000)
-    },
-    [prompt.promptText, prompt.title]
-  )
+  const handleCopy = useCallback(async () => {
+    await copyToClipboard(prompt.promptText)
+    setCopied(true)
+    toast.success(`Copied: ${prompt.title}`)
+    setTimeout(() => setCopied(false), 2000)
+  }, [prompt.promptText, prompt.title])
 
   const handleUnpin = useCallback(
     (e: React.MouseEvent) => {
@@ -69,144 +61,198 @@ function PromptPill({
     [onUnpin]
   )
 
+  const handleExpand = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation()
+      onToggleExpand()
+    },
+    [onToggleExpand]
+  )
+
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, x: -12, scale: 0.94 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      exit={{ opacity: 0, x: 12, scale: 0.94 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-      onClick={onActivate}
+      initial={{ opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, x: 16, scale: 0.96 }}
+      transition={{ type: 'spring', stiffness: 420, damping: 30 }}
       className={cn(
-        'group relative flex items-center gap-2.5 rounded-lg px-3 py-2.5 cursor-pointer',
-        'border transition-all duration-150 select-none',
-        isActive
-          ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)]/40 shadow-[0_0_12px_rgba(99,102,241,0.15)]'
-          : 'bg-[rgba(255,255,255,0.03)] border-[var(--border-subtle)] hover:border-[var(--border-default)] hover:bg-[rgba(255,255,255,0.06)]'
+        'group rounded-xl border overflow-hidden transition-all duration-150',
+        isExpanded
+          ? 'border-[var(--accent-primary)]/30 shadow-[0_0_16px_rgba(99,102,241,0.1)]'
+          : 'border-[var(--border-subtle)] hover:border-[var(--border-default)]'
       )}
     >
-      <div
+      <button
+        type="button"
+        onClick={handleCopy}
         className={cn(
-          'flex-shrink-0 w-1.5 h-1.5 rounded-full',
-          isActive ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-emphasis)]'
+          'w-full flex items-center gap-2.5 px-3 py-2.5 transition-all duration-150 active:scale-[0.99]',
+          copied
+            ? 'bg-green-500/10'
+            : isExpanded
+            ? 'bg-[var(--accent-primary)]/6'
+            : 'bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.06)]'
         )}
-      />
-
-      <div className="min-w-0 flex-1">
-        <p
+        aria-label={`Copy: ${prompt.title}`}
+      >
+        <div
           className={cn(
-            'text-xs font-semibold leading-tight truncate transition-colors duration-150',
-            isActive ? 'text-[var(--accent-primary)]' : 'text-[var(--text-primary)]'
+            'flex-shrink-0 w-1.5 h-1.5 rounded-full transition-colors duration-150',
+            copied
+              ? 'bg-green-400'
+              : isExpanded
+              ? 'bg-[var(--accent-primary)]'
+              : 'bg-[var(--border-emphasis)]'
           )}
-        >
-          {prompt.title}
-        </p>
-        {prompt.aiTool && (
-          <span
+        />
+
+        <div className="min-w-0 flex-1 text-left">
+          <p
             className={cn(
-              'mt-0.5 inline-flex text-[10px] font-medium px-1.5 py-0.5 rounded-full border',
-              toolColor
+              'text-xs font-semibold leading-tight truncate transition-colors duration-150',
+              copied
+                ? 'text-green-400'
+                : isExpanded
+                ? 'text-[var(--accent-primary)]'
+                : 'text-[var(--text-primary)]'
             )}
           >
-            {prompt.aiTool}
-          </span>
-        )}
-      </div>
-
-      <div className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-        <button
-          type="button"
-          onClick={handleCopy}
-          aria-label="Copy prompt"
-          className={cn(
-            'flex items-center justify-center w-6 h-6 rounded-md transition-all duration-150',
-            copied
-              ? 'text-green-400 bg-green-400/10'
-              : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]'
+            {prompt.title}
+          </p>
+          {prompt.aiTool && (
+            <span
+              className={cn(
+                'mt-0.5 inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded-full border',
+                AI_TOOL_COLOR_MAP[prompt.aiTool] ?? 'text-gray-400 bg-gray-400/10 border-gray-400/20'
+              )}
+            >
+              {prompt.aiTool}
+            </span>
           )}
-        >
-          {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-        </button>
-        <button
-          type="button"
-          onClick={handleUnpin}
-          aria-label="Unpin prompt"
-          className="flex items-center justify-center w-6 h-6 rounded-md text-[var(--text-tertiary)] hover:text-red-400 hover:bg-red-400/10 transition-all duration-150"
-        >
-          <X className="w-3 h-3" />
-        </button>
-      </div>
+        </div>
+
+        <div className="flex-shrink-0 flex items-center gap-1">
+          <span
+            className={cn(
+              'flex items-center justify-center w-5 h-5 rounded-md transition-all duration-150',
+              copied ? 'text-green-400' : 'text-[var(--text-tertiary)]'
+            )}
+          >
+            {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+          </span>
+
+          <button
+            type="button"
+            onClick={handleExpand}
+            aria-label="Expand prompt"
+            className="flex items-center justify-center w-5 h-5 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-quaternary)] transition-all duration-150"
+          >
+            <ChevronRight
+              className={cn(
+                'w-3 h-3 transition-transform duration-200',
+                isExpanded && 'rotate-90'
+              )}
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={handleUnpin}
+            aria-label="Unpin"
+            className="flex items-center justify-center w-5 h-5 rounded-md text-[var(--text-tertiary)] hover:text-red-400 hover:bg-red-400/10 transition-all duration-150 opacity-0 group-hover:opacity-100"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      </button>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="px-3 pb-3 pt-1 border-t border-[var(--accent-primary)]/15">
+              <pre className="whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-[var(--text-tertiary)] max-h-36 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--border-default)] scrollbar-track-transparent">
+                {prompt.promptText}
+              </pre>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   )
 }
 
-function ExpandedPromptView({
+function PromptButton({
   prompt,
-  onClose,
+  onUnpin,
 }: {
   prompt: PinnedPrompt
-  onClose: () => void
+  onUnpin: () => void
 }) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = useCallback(async () => {
     await copyToClipboard(prompt.promptText)
     setCopied(true)
-    toast.success('Prompt copied!')
-    setTimeout(() => setCopied(false), 2000)
-  }, [prompt.promptText])
+    toast.success(`Copied: ${prompt.title}`)
+    setTimeout(() => setCopied(false), 1800)
+  }, [prompt.promptText, prompt.title])
+
+  const handleUnpin = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation()
+      onUnpin()
+    },
+    [onUnpin]
+  )
+
+  const short = prompt.title.length > 18 ? prompt.title.slice(0, 16) + '…' : prompt.title
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 4 }}
-      transition={{ duration: 0.15 }}
-      className="mt-2 rounded-xl border border-[var(--accent-border)] bg-[var(--bg-secondary)] overflow-hidden"
+      layout
+      initial={{ opacity: 0, scale: 0.88 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.88 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+      className="group relative"
     >
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-subtle)]">
-        <p className="text-[11px] font-semibold text-[var(--accent-primary)] truncate max-w-[180px]">
-          {prompt.title}
-        </p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex items-center justify-center w-5 h-5 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors duration-150"
-        >
-          <X className="w-3 h-3" />
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={handleCopy}
+        title={prompt.title}
+        className={cn(
+          'relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold',
+          'border transition-all duration-150 active:scale-95 w-full',
+          copied
+            ? 'bg-green-500/15 border-green-500/30 text-green-400'
+            : 'bg-[rgba(255,255,255,0.04)] border-[var(--border-subtle)] text-[var(--text-secondary)]',
+          'hover:border-[var(--accent-border)] hover:text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/8',
+          'shadow-[0_1px_4px_rgba(0,0,0,0.3)]'
+        )}
+      >
+        {copied ? (
+          <Check className="w-3 h-3 flex-shrink-0" />
+        ) : (
+          <Copy className="w-3 h-3 flex-shrink-0 opacity-60" />
+        )}
+        <span className="truncate">{short}</span>
+      </button>
 
-      <div className="p-3 max-h-52 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--border-default)] scrollbar-track-transparent">
-        <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[var(--text-secondary)]">
-          {prompt.promptText}
-        </pre>
-      </div>
-
-      <div className="px-3 py-2.5 border-t border-[var(--border-subtle)]">
-        <button
-          type="button"
-          onClick={handleCopy}
-          className={cn(
-            'w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-150 active:scale-95',
-            copied
-              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-              : 'bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white shadow-[0_2px_8px_rgba(99,102,241,0.3)]'
-          )}
-        >
-          {copied ? (
-            <>
-              <Check className="w-3.5 h-3.5" />
-              Copied!
-            </>
-          ) : (
-            <>
-              <Copy className="w-3.5 h-3.5" />
-              Copy Prompt
-            </>
-          )}
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={handleUnpin}
+        aria-label="Unpin"
+        className="absolute -top-1.5 -right-1.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-[var(--bg-primary)] border border-[var(--border-default)] text-[var(--text-tertiary)] hover:text-red-400 hover:border-red-400/40 transition-all duration-150 z-10"
+      >
+        <X className="w-2.5 h-2.5" />
+      </button>
     </motion.div>
   )
 }
@@ -234,6 +280,7 @@ export function QuickPromptsPanel() {
   const isDragging = useRef(false)
   const [draggingNow, setDraggingNow] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [viewMode, setViewMode] = useState<'list' | 'buttons'>('list')
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 })
 
   useLayoutEffect(() => {
@@ -248,11 +295,9 @@ export function QuickPromptsPanel() {
     (x: number, y: number) => {
       const w = viewportSize.w || window.innerWidth
       const h = viewportSize.h || window.innerHeight
-      const maxX = w - PANEL_WIDTH - 8
-      const maxY = h - 120
       return {
-        x: Math.max(8, Math.min(x, maxX)),
-        y: Math.max(8, Math.min(y, maxY)),
+        x: Math.max(8, Math.min(x, w - PANEL_WIDTH - 8)),
+        y: Math.max(8, Math.min(y, h - 120)),
       }
     },
     [viewportSize]
@@ -285,11 +330,10 @@ export function QuickPromptsPanel() {
       if (!isDragging.current) return
       const dx = e.clientX - dragStartPos.current.x
       const dy = e.clientY - dragStartPos.current.y
-      const raw = {
-        x: dragStartPanelPos.current.x + dx,
-        y: dragStartPanelPos.current.y + dy,
-      }
-      const clamped = clampPos(raw.x, raw.y)
+      const clamped = clampPos(
+        dragStartPanelPos.current.x + dx,
+        dragStartPanelPos.current.y + dy
+      )
       setPanelPosition(clamped)
       setPanelDock('free')
     },
@@ -297,12 +341,11 @@ export function QuickPromptsPanel() {
   )
 
   const onDragEnd = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
+    (_e: React.PointerEvent<HTMLDivElement>) => {
       if (!isDragging.current) return
       isDragging.current = false
       setDraggingNow(false)
-      const dock = snapToDock(panelPosition.x)
-      setPanelDock(dock)
+      setPanelDock(snapToDock(panelPosition.x))
     },
     [panelPosition.x, snapToDock, setPanelDock]
   )
@@ -313,17 +356,7 @@ export function QuickPromptsPanel() {
       : panelDock === 'right'
       ? (viewportSize.w || window.innerWidth) - PANEL_WIDTH - 12
       : panelPosition.x
-
   const resolvedY = panelPosition.y
-
-  const activePrompt = pinnedPrompts.find((p) => p.id === activePromptId) ?? null
-
-  const handleActivate = useCallback(
-    (id: string) => {
-      setActivePrompt(activePromptId === id ? null : id)
-    },
-    [activePromptId, setActivePrompt]
-  )
 
   if (!panelVisible && pinnedPrompts.length === 0) return null
 
@@ -342,8 +375,8 @@ export function QuickPromptsPanel() {
             className={cn(
               'flex items-center gap-2 px-4 py-2.5 rounded-2xl font-semibold text-sm',
               'bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white',
-              'shadow-[0_4px_24px_rgba(99,102,241,0.45)] hover:shadow-[0_6px_32px_rgba(99,102,241,0.6)]',
-              'transition-all duration-200 active:scale-95 border border-[var(--accent-primary)]'
+              'shadow-[0_4px_24px_rgba(99,102,241,0.5)] hover:shadow-[0_6px_32px_rgba(99,102,241,0.65)]',
+              'transition-all duration-200 active:scale-95'
             )}
             aria-label="Show Quick Prompts"
           >
@@ -358,9 +391,9 @@ export function QuickPromptsPanel() {
           <motion.div
             key="panel"
             ref={panelRef}
-            initial={{ opacity: 0, scale: 0.92, y: 8 }}
+            initial={{ opacity: 0, scale: 0.93, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 10 }}
+            exit={{ opacity: 0, scale: 0.91, y: 12 }}
             transition={{ type: 'spring', stiffness: 360, damping: 28 }}
             style={{
               position: 'fixed',
@@ -372,10 +405,11 @@ export function QuickPromptsPanel() {
             }}
             className={cn(
               'rounded-2xl border border-[var(--border-default)]',
-              'bg-[rgba(10,10,10,0.88)] backdrop-blur-xl',
-              'shadow-[0_8px_40px_rgba(0,0,0,0.6),0_0_0_1px_rgba(99,102,241,0.08)]',
-              draggingNow && 'shadow-[0_16px_60px_rgba(0,0,0,0.8),0_0_0_1px_rgba(99,102,241,0.2)]',
-              'overflow-hidden transition-[width] duration-200'
+              'bg-[rgba(10,10,10,0.92)] backdrop-blur-2xl',
+              draggingNow
+                ? 'shadow-[0_20px_60px_rgba(0,0,0,0.85),0_0_0_1px_rgba(99,102,241,0.25)]'
+                : 'shadow-[0_8px_40px_rgba(0,0,0,0.65),0_0_0_1px_rgba(99,102,241,0.07)]',
+              'overflow-hidden transition-[width,box-shadow] duration-200'
             )}
           >
             <div
@@ -384,61 +418,67 @@ export function QuickPromptsPanel() {
               onPointerUp={onDragEnd}
               onPointerCancel={onDragEnd}
               className={cn(
-                'flex items-center justify-between px-3 py-2.5',
+                'flex items-center justify-between px-3 py-2.5 gap-2',
                 'border-b border-[var(--border-subtle)]',
                 'cursor-grab active:cursor-grabbing select-none',
-                'bg-[rgba(255,255,255,0.02)]'
+                'bg-[rgba(255,255,255,0.025)]'
               )}
             >
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="flex items-center justify-center w-6 h-6 rounded-lg bg-[var(--accent-primary)]/15">
-                  <Zap className="w-3.5 h-3.5 text-[var(--accent-primary)]" />
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <div className="flex-shrink-0 flex items-center justify-center w-5 h-5 rounded-md bg-[var(--accent-primary)]/15">
+                  <Zap className="w-3 h-3 text-[var(--accent-primary)]" />
                 </div>
                 {!panelCollapsed && (
-                  <motion.div
-                    initial={{ opacity: 0, width: 0 }}
-                    animate={{ opacity: 1, width: 'auto' }}
-                    exit={{ opacity: 0, width: 0 }}
-                    className="flex items-center gap-1.5 overflow-hidden"
-                  >
-                    <span className="text-xs font-bold text-[var(--text-primary)] whitespace-nowrap">
-                      Quick Prompts
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[11px] font-bold text-[var(--text-primary)] whitespace-nowrap tracking-wide">
+                      QUICK PROMPTS
                     </span>
                     {pinnedPrompts.length > 0 && (
                       <span className="flex items-center justify-center w-4 h-4 rounded-full bg-[var(--accent-primary)] text-white text-[9px] font-bold flex-shrink-0">
                         {pinnedPrompts.length}
                       </span>
                     )}
-                  </motion.div>
+                  </div>
                 )}
               </div>
 
               {!panelCollapsed && (
                 <div
-                  className="flex items-center gap-0.5"
+                  className="flex items-center gap-0.5 flex-shrink-0"
                   onPointerDown={(e) => e.stopPropagation()}
                 >
                   <button
                     type="button"
+                    onClick={() => setViewMode(viewMode === 'list' ? 'buttons' : 'list')}
+                    aria-label="Toggle view mode"
+                    title={viewMode === 'list' ? 'Switch to button view' : 'Switch to list view'}
+                    className="flex items-center justify-center w-5 h-5 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-quaternary)] transition-colors duration-150"
+                  >
+                    {viewMode === 'list' ? (
+                      <LayoutGrid className="w-3 h-3" />
+                    ) : (
+                      <List className="w-3 h-3" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => {
-                      const w = viewportSize.w || window.innerWidth
                       setPanelPosition({ x: 12, y: resolvedY })
                       setPanelDock('left')
                     }}
                     aria-label="Dock left"
-                    className="flex items-center justify-center w-6 h-6 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-quaternary)] transition-colors duration-150"
+                    className="flex items-center justify-center w-5 h-5 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-quaternary)] transition-colors duration-150"
                   >
                     <ArrowLeftToLine className="w-3 h-3" />
                   </button>
                   <button
                     type="button"
                     onClick={() => {
-                      const w = viewportSize.w || window.innerWidth
-                      setPanelPosition({ x: w - PANEL_WIDTH - 12, y: resolvedY })
+                      setPanelPosition({ x: (viewportSize.w || window.innerWidth) - PANEL_WIDTH - 12, y: resolvedY })
                       setPanelDock('right')
                     }}
                     aria-label="Dock right"
-                    className="flex items-center justify-center w-6 h-6 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-quaternary)] transition-colors duration-150"
+                    className="flex items-center justify-center w-5 h-5 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-quaternary)] transition-colors duration-150"
                   >
                     <ArrowRightToLine className="w-3 h-3" />
                   </button>
@@ -446,7 +486,7 @@ export function QuickPromptsPanel() {
                     type="button"
                     onClick={togglePanel}
                     aria-label="Hide panel"
-                    className="flex items-center justify-center w-6 h-6 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)] transition-colors duration-150"
+                    className="flex items-center justify-center w-5 h-5 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)] transition-colors duration-150"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -455,16 +495,9 @@ export function QuickPromptsPanel() {
 
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  toggleCollapsed()
-                }}
+                onClick={(e) => { e.stopPropagation(); toggleCollapsed() }}
                 aria-label={panelCollapsed ? 'Expand panel' : 'Collapse panel'}
-                className={cn(
-                  'flex items-center justify-center w-6 h-6 rounded-md transition-colors duration-150',
-                  'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]',
-                  panelCollapsed && 'ml-0'
-                )}
+                className="flex-shrink-0 flex items-center justify-center w-5 h-5 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)] transition-colors duration-150"
                 onPointerDown={(e) => e.stopPropagation()}
               >
                 {panelCollapsed ? (
@@ -480,56 +513,51 @@ export function QuickPromptsPanel() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
+                transition={{ duration: 0.12 }}
               >
                 {pinnedPrompts.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-10 px-4 gap-3">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-[var(--accent-primary)]/8 border border-[var(--accent-border)]">
-                      <Pin className="w-4 h-4 text-[var(--accent-primary)]/60" />
+                  <div className="flex flex-col items-center justify-center py-10 px-5 gap-3">
+                    <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-[var(--accent-primary)]/8 border border-[var(--accent-border)]">
+                      <Pin className="w-4 h-4 text-[var(--accent-primary)]/50" />
                     </div>
                     <div className="text-center">
                       <p className="text-xs font-semibold text-[var(--text-secondary)]">
                         No prompts pinned
                       </p>
-                      <p className="mt-1 text-[11px] text-[var(--text-tertiary)] leading-relaxed">
-                        Pin prompts from the Library or Collections to access them instantly here.
+                      <p className="mt-1 text-[10px] text-[var(--text-tertiary)] leading-relaxed max-w-[220px]">
+                        Pin prompts from the Library or Collections using the
+                        <Pin className="inline w-2.5 h-2.5 mx-1 text-[var(--accent-primary)]" />
+                        icon on any prompt card.
                       </p>
                     </div>
                   </div>
-                ) : (
+                ) : viewMode === 'list' ? (
                   <div className="flex flex-col">
-                    <div className="px-3 pt-3 pb-1 flex flex-col gap-1.5 max-h-[420px] overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--border-default)] scrollbar-track-transparent">
+                    <div className="px-3 pt-2.5 pb-1 flex flex-col gap-1.5 max-h-[440px] overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--border-default)] scrollbar-track-transparent">
                       <AnimatePresence mode="popLayout">
                         {pinnedPrompts.map((prompt) => (
-                          <div key={prompt.id}>
-                            <PromptPill
-                              prompt={prompt}
-                              isActive={activePromptId === prompt.id}
-                              onActivate={() => handleActivate(prompt.id)}
-                              onUnpin={() => unpinPrompt(prompt.id)}
-                            />
-                            <AnimatePresence>
-                              {activePromptId === prompt.id && (
-                                <ExpandedPromptView
-                                  prompt={prompt}
-                                  onClose={() => setActivePrompt(null)}
-                                />
-                              )}
-                            </AnimatePresence>
-                          </div>
+                          <PromptRow
+                            key={prompt.id}
+                            prompt={prompt}
+                            isExpanded={activePromptId === prompt.id}
+                            onToggleExpand={() =>
+                              setActivePrompt(activePromptId === prompt.id ? null : prompt.id)
+                            }
+                            onUnpin={() => unpinPrompt(prompt.id)}
+                          />
                         ))}
                       </AnimatePresence>
                     </div>
 
-                    <div className="px-3 py-2.5 border-t border-[var(--border-subtle)] flex items-center justify-between">
+                    <div className="px-3 py-2 border-t border-[var(--border-subtle)] flex items-center justify-between">
                       <span className="text-[10px] text-[var(--text-tertiary)] font-medium">
-                        {pinnedPrompts.length} pinned prompt{pinnedPrompts.length !== 1 ? 's' : ''}
+                        {pinnedPrompts.length} prompt{pinnedPrompts.length !== 1 ? 's' : ''}
                       </span>
                       {!showClearConfirm ? (
                         <button
                           type="button"
                           onClick={() => setShowClearConfirm(true)}
-                          className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] hover:text-red-400 transition-colors duration-150 px-1.5 py-1 rounded-md hover:bg-red-400/8"
+                          className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] hover:text-red-400 transition-colors duration-150 px-1.5 py-0.5 rounded-md hover:bg-red-400/8"
                         >
                           <Trash2 className="w-3 h-3" />
                           Clear all
@@ -543,11 +571,59 @@ export function QuickPromptsPanel() {
                           <span className="text-[10px] text-[var(--text-tertiary)]">Sure?</span>
                           <button
                             type="button"
-                            onClick={() => {
-                              clearAllPins()
-                              setShowClearConfirm(false)
-                              toast.success('Quick Prompts cleared')
-                            }}
+                            onClick={() => { clearAllPins(); setShowClearConfirm(false) }}
+                            className="text-[10px] font-semibold text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded-md hover:bg-red-400/10 transition-colors duration-150"
+                          >
+                            Yes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowClearConfirm(false)}
+                            className="text-[10px] font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded-md hover:bg-[var(--bg-quaternary)] transition-colors duration-150"
+                          >
+                            No
+                          </button>
+                        </motion.div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col">
+                    <div className="px-3 pt-2.5 pb-1 grid grid-cols-2 gap-1.5 max-h-[440px] overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--border-default)] scrollbar-track-transparent">
+                      <AnimatePresence mode="popLayout">
+                        {pinnedPrompts.map((prompt) => (
+                          <PromptButton
+                            key={prompt.id}
+                            prompt={prompt}
+                            onUnpin={() => unpinPrompt(prompt.id)}
+                          />
+                        ))}
+                      </AnimatePresence>
+                    </div>
+
+                    <div className="px-3 py-2 border-t border-[var(--border-subtle)] flex items-center justify-between">
+                      <span className="text-[10px] text-[var(--text-tertiary)] font-medium">
+                        {pinnedPrompts.length} prompt{pinnedPrompts.length !== 1 ? 's' : ''}
+                      </span>
+                      {!showClearConfirm ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowClearConfirm(true)}
+                          className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] hover:text-red-400 transition-colors duration-150 px-1.5 py-0.5 rounded-md hover:bg-red-400/8"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Clear all
+                        </button>
+                      ) : (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="flex items-center gap-1"
+                        >
+                          <span className="text-[10px] text-[var(--text-tertiary)]">Sure?</span>
+                          <button
+                            type="button"
+                            onClick={() => { clearAllPins(); setShowClearConfirm(false) }}
                             className="text-[10px] font-semibold text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded-md hover:bg-red-400/10 transition-colors duration-150"
                           >
                             Yes
@@ -569,25 +645,21 @@ export function QuickPromptsPanel() {
 
             {panelCollapsed && pinnedPrompts.length > 0 && (
               <div className="flex flex-col items-center gap-1 py-2 px-1">
-                {pinnedPrompts.slice(0, 5).map((prompt) => (
+                {pinnedPrompts.slice(0, 6).map((prompt) => (
                   <motion.button
                     key={prompt.id}
                     layout
                     type="button"
-                    onClick={() => {
-                      toggleCollapsed()
-                      setActivePrompt(prompt.id)
-                    }}
+                    onClick={() => { toggleCollapsed(); setActivePrompt(prompt.id) }}
                     aria-label={prompt.title}
+                    title={prompt.title}
                     className={cn(
                       'w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150',
                       'text-[var(--text-tertiary)] hover:text-[var(--accent-primary)]',
-                      'hover:bg-[var(--accent-primary)]/10 border border-transparent',
-                      'hover:border-[var(--accent-border)]'
+                      'hover:bg-[var(--accent-primary)]/10 border border-transparent hover:border-[var(--accent-border)]'
                     )}
-                    title={prompt.title}
                   >
-                    <span className="text-[11px] font-bold uppercase">
+                    <span className="text-[10px] font-black uppercase tracking-wide">
                       {prompt.title.slice(0, 2)}
                     </span>
                   </motion.button>
