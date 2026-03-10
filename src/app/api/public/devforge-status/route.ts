@@ -20,13 +20,20 @@ export async function GET(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // ── Optional projectId query param ────────────────────────────────────────
+  const { searchParams } = new URL(request.url)
+  const projectId = searchParams.get('projectId')
+
   try {
-    // ── Active project: IN_PROGRESS, most recently opened ──────────────────
+    // ── If projectId provided — return that specific project ───────────────
     const activeProject = await prisma.project.findFirst({
-      where: { status: 'IN_PROGRESS' },
-      orderBy: { lastOpenedAt: 'desc' },
+      where: projectId
+        ? { id: projectId }
+        : { status: 'IN_PROGRESS' },
+      orderBy: projectId ? undefined : { lastOpenedAt: 'desc' },
       select: {
         name: true,
+        status: true,
         totalFiles: true,
         completedFiles: true,
         updatedAt: true,
@@ -39,7 +46,10 @@ export async function GET(request: Request): Promise<NextResponse> {
       },
     })
 
-    if (activeProject) {
+    // If specific project requested but it's not IN_PROGRESS, treat as no active project
+    const isActive = activeProject?.status === 'IN_PROGRESS'
+
+    if (activeProject && isActive) {
       const totalFiles = activeProject.totalFiles ?? 0
       const completedFiles = activeProject.completedFiles ?? 0
       const percentComplete =
