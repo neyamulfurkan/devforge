@@ -26,5 +26,6 @@ export const config = {
     '/api/ai/(.*)',
     '/api/upload',
     '/api/search',
+    // /api/public/* is intentionally excluded — no auth required
   ],
 }
