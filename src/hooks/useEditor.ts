@@ -205,11 +205,17 @@ export function useEditor(projectId: string) {
 
   // ── Local-mode: open folder picker ───────────────────────────────────────
 
-  const openLocalFolder = useCallback(async () => {
+  const openLocalFolder = useCallback(async (): Promise<{
+    success: boolean
+    reason?: 'cancelled' | 'mismatch' | 'error'
+    matchPct?: number
+    matched?: number
+    total?: number
+  }> => {
     // showDirectoryPicker is Chrome/Edge only — guard gracefully
     if (typeof window === 'undefined' || !('showDirectoryPicker' in window)) {
       console.warn('File System Access API not supported in this browser.')
-      return
+      return { success: false, reason: 'error' }
     }
 
     try {
@@ -217,21 +223,86 @@ export function useEditor(projectId: string) {
         window as Window & { showDirectoryPicker: () => Promise<FileSystemDirectoryHandle> }
       ).showDirectoryPicker()
 
-      // Persist handle to IndexedDB so it survives page reloads
-      await saveHandleForProject(projectId, dirHandle)
+      // ── Walk the folder to get all file paths ──────────────────────────────
+      const tree = await walkDirectory(dirHandle)
 
+      // ── Flatten tree to a set of all file paths in the folder ──────────────
+      function flattenPaths(nodes: LocalFileNode[]): Set<string> {
+        const paths = new Set<string>()
+        for (const node of nodes) {
+          if (node.type === 'file') {
+            // Normalise: store both the full path and just the filename
+            paths.add(node.path.replace(/^\/+/, ''))
+            paths.add(node.name)
+          }
+          if (node.type === 'folder' && node.children) {
+            for (const p of flattenPaths(node.children)) {
+              paths.add(p)
+            }
+          }
+        }
+        return paths
+      }
+
+      const localPaths = flattenPaths(tree)
+
+      // ── Validate against project files if we have them ────────────────────
+      // Only validate when project has files loaded. Skip validation if no
+      // project files exist yet (new project, files not generated yet).
+      if (files.length > 0) {
+        let matchCount = 0
+
+        for (const projectFile of files) {
+          const projNorm = projectFile.filePath.replace(/^\/+/, '')
+          const projFilename = projNorm.split('/').pop() ?? ''
+
+          const isMatch =
+            // Exact path match
+            localPaths.has(projNorm) ||
+            // Filename match (catches root prefix differences)
+            (projFilename.length > 3 && localPaths.has(projFilename)) ||
+            // Suffix match — local tree has "university-club/src/lib/utils.ts"
+            // project has "src/lib/utils.ts"
+            [...localPaths].some(
+              (lp) =>
+                lp === projNorm ||
+                lp.endsWith('/' + projNorm) ||
+                projNorm.endsWith('/' + lp)
+            )
+
+          if (isMatch) matchCount++
+        }
+
+        const matchPct = Math.round((matchCount / files.length) * 100)
+        const MATCH_THRESHOLD = 60
+
+        if (matchPct < MATCH_THRESHOLD) {
+          // Folder doesn't match this project — reject it
+          return {
+            success: false,
+            reason: 'mismatch',
+            matchPct,
+            matched: matchCount,
+            total: files.length,
+          }
+        }
+      }
+
+      // ── Validation passed — link the folder ───────────────────────────────
+      await saveHandleForProject(projectId, dirHandle)
       setLocalFolderHandle(dirHandle)
       switchToLocalMode()
-
-      const tree = await walkDirectory(dirHandle)
       setLocalFileTree(tree)
+
+      return { success: true, matchPct: 100 }
     } catch (err) {
-      // User cancelled the picker — not an error
-      if ((err as DOMException).name !== 'AbortError') {
-        console.error('openLocalFolder error:', err)
+      if ((err as DOMException).name === 'AbortError') {
+        return { success: false, reason: 'cancelled' }
       }
+      console.error('openLocalFolder error:', err)
+      return { success: false, reason: 'error' }
     }
-  }, [projectId, setLocalFolderHandle, setLocalFileTree, switchToLocalMode])
+  }, [projectId, files, setLocalFolderHandle, setLocalFileTree, switchToLocalMode])
 
   // ── Local-mode: restore saved folder on mount ─────────────────────────────
   // Runs once when the editor tab mounts for this projectId.

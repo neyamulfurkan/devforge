@@ -169,44 +169,62 @@ function GcdPlusCodeButton({
   const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [fetchedCount, setFetchedCount] = useState(0)
 
-  const { isLocalMode, fileContent: openFileContent, openLocalPath } = useEditor(projectId)
-  const { localFileTree } = useEditorStore()
+   const { isLocalMode } = useEditor(projectId)
 
   // ── Strip "FILE NNN: " prefix and normalise path ──────────────────────────
   const cleanPath = (raw: string): string =>
     raw.replace(/^FILE\s+[\w]+:\s*/i, '').trim()
 
-  // ── Walk local tree, match by path suffix ─────────────────────────────────
-  // localFileTree paths may be "devforge/src/lib/utils.ts" but required path
-  // is "src/lib/utils.ts" — match if tree node path ENDS WITH the required path
+  // ── Walk local tree nodes recursively, reading file handles at call time ──
+  // CRITICAL: reads localFileTree from Zustand store at click time via
+  // getState() — never from a stale render-time snapshot.
+  // Matches by: exact path, suffix match, or filename match as last resort.
   const findInLocalTree = useCallback(
     async (
       nodes: LocalFileNode[],
       requiredPath: string
     ): Promise<string | null> => {
+      // Normalise: remove leading slashes
+      const normalised = requiredPath.replace(/^\/+/, '')
+      // Get just the filename for last-resort matching
+      const requiredFilename = normalised.split('/').pop() ?? ''
+
       for (const node of nodes) {
-        if (
-          node.type === 'file' &&
-          (node.path === requiredPath ||
-            node.path.endsWith('/' + requiredPath) ||
-            node.path.endsWith(requiredPath))
-        ) {
-          try {
-            const f = await (node.handle as FileSystemFileHandle).getFile()
-            const text = await f.text()
-            if (text.trim()) return text
-          } catch {
-            // continue searching
+        if (node.type === 'file') {
+          const nodePath = node.path.replace(/^\/+/, '')
+          const nodeFilename = nodePath.split('/').pop() ?? ''
+
+          const isMatch =
+            // Exact match
+            nodePath === normalised ||
+            // Tree path ends with required path (root folder prefix case)
+            nodePath.endsWith('/' + normalised) ||
+            // Required path ends with node path (reverse prefix case)
+            normalised.endsWith('/' + nodePath) ||
+            // Filename match as last resort (only if filename is unique enough)
+            (requiredFilename.length > 5 && nodeFilename === requiredFilename)
+
+          if (isMatch) {
+            try {
+              // Always cast to FileSystemFileHandle — type: 'file' guarantees this
+              const fsHandle = node.handle as FileSystemFileHandle
+              const f = await fsHandle.getFile()
+              const text = await f.text()
+              if (text.trim()) return text
+            } catch {
+              // Handle stale or permission error — continue searching
+            }
           }
         }
-        if (node.type === 'folder' && node.children) {
+
+        if (node.type === 'folder' && node.children && node.children.length > 0) {
           const found = await findInLocalTree(node.children, requiredPath)
           if (found) return found
         }
       }
       return null
     },
-    []
+    [] // no deps — reads store via getState() at call time
   )
 
   const handleClick = useCallback(
@@ -218,7 +236,14 @@ function GcdPlusCodeButton({
 
       try {
         const sep = '═'.repeat(60)
-        const thinSep = '─'.repeat(60)
+
+        // ── Read store state at click time — never stale ─────────────────────
+        const {
+          localFileTree: liveTree,
+          fileContent: liveContent,
+          openLocalPath: livePath,
+          isLocalMode: liveLocalMode,
+        } = useEditorStore.getState()
 
         // ── Fetch all project file metadata once (for DB fallback) ──────────
         let allProjectFiles: Array<{ id: string; filePath: string }> = []
@@ -244,20 +269,22 @@ function GcdPlusCodeButton({
           let source = ''
 
           // Source 1 — currently open file in editor (already in memory)
-          if (
-            openLocalPath &&
-            (openLocalPath === reqPath ||
-              openLocalPath.endsWith('/' + reqPath) ||
-              openLocalPath.endsWith(reqPath)) &&
-            openFileContent?.trim()
-          ) {
-            content = openFileContent
-            source = 'editor'
+          if (livePath && liveContent?.trim()) {
+            const livNorm = livePath.replace(/^\/+/, '')
+            const reqNorm = reqPath.replace(/^\/+/, '')
+            if (
+              livNorm === reqNorm ||
+              livNorm.endsWith('/' + reqNorm) ||
+              reqNorm.endsWith('/' + livNorm)
+            ) {
+              content = liveContent
+              source = 'editor'
+            }
           }
 
-          // Source 2 — local disk tree
-          if (!content && isLocalMode && localFileTree.length > 0) {
-            const diskContent = await findInLocalTree(localFileTree, reqPath)
+          // Source 2 — local disk tree (live handles from store)
+          if (!content && liveLocalMode && liveTree.length > 0) {
+            const diskContent = await findInLocalTree(liveTree, reqPath)
             if (diskContent) {
               content = diskContent
               source = 'disk'
@@ -266,11 +293,15 @@ function GcdPlusCodeButton({
 
           // Source 3 — DB / Cloudinary via API
           if (!content) {
-            const match = allProjectFiles.find(
-              (f) =>
-                f.filePath === reqPath ||
-                f.filePath.endsWith('/' + reqPath)
-            )
+            const reqNorm = reqPath.replace(/^\/+/, '')
+            const match = allProjectFiles.find((f) => {
+              const fNorm = f.filePath.replace(/^\/+/, '')
+              return (
+                fNorm === reqNorm ||
+                fNorm.endsWith('/' + reqNorm) ||
+                reqNorm.endsWith('/' + fNorm)
+              )
+            })
             if (match) {
               try {
                 const codeRes = await fetch(
@@ -388,9 +419,6 @@ ${requiredSection}`
       requiredFiles,
       projectId,
       isLocalMode,
-      localFileTree,
-      openFileContent,
-      openLocalPath,
       findInLocalTree,
     ]
   )

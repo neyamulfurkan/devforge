@@ -124,12 +124,29 @@ function EditorModeSwitcher({ projectId }: { projectId: string }): JSX.Element {
   const { isLocalMode, openLocalFolder, switchToDBMode, createProjectFolder } = useEditor(projectId)
   const { localFolderHandle } = useEditorStore()
   const [creating, setCreating] = React.useState(false)
+  const [mismatchInfo, setMismatchInfo] = React.useState<{
+    matchPct: number
+    matched: number
+    total: number
+  } | null>(null)
 
   const handleCreate = React.useCallback(async () => {
     setCreating(true)
     await createProjectFolder()
     setCreating(false)
   }, [createProjectFolder])
+
+  const handleOpenFolder = React.useCallback(async () => {
+    setMismatchInfo(null)
+    const result = await openLocalFolder()
+    if (!result.success && result.reason === 'mismatch') {
+      setMismatchInfo({
+        matchPct: result.matchPct ?? 0,
+        matched: result.matched ?? 0,
+        total: result.total ?? 0,
+      })
+    }
+  }, [openLocalFolder])
 
   return (
     <div className="flex h-9 flex-shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3">
@@ -150,7 +167,7 @@ function EditorModeSwitcher({ projectId }: { projectId: string }): JSX.Element {
       {/* Local folder — shows folder name when linked */}
       <button
         type="button"
-        onClick={isLocalMode && localFolderHandle ? undefined : openLocalFolder}
+        onClick={isLocalMode && localFolderHandle ? undefined : handleOpenFolder}
         className={cn(
           'rounded px-2.5 py-1 text-xs font-medium transition-colors',
           isLocalMode && localFolderHandle
@@ -194,6 +211,21 @@ function EditorModeSwitcher({ projectId }: { projectId: string }): JSX.Element {
           Change
         </button>
       )}
+    {/* Mismatch warning — shown when opened folder doesn't match project */}
+      {mismatchInfo && (
+        <div className="flex items-center gap-3 px-3 py-2 bg-[var(--status-error-bg)] border-b border-[var(--status-error)]/20">
+          <span className="text-xs text-[var(--status-error)] flex-1">
+            Wrong folder — only {mismatchInfo.matched} of {mismatchInfo.total} project files found ({mismatchInfo.matchPct}% match). Need 60%+ to open. Try "Create Project Folder" instead.
+          </span>
+          <button
+            type="button"
+            onClick={() => setMismatchInfo(null)}
+            className="text-[var(--status-error)] hover:opacity-70 text-lg leading-none flex-shrink-0"
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -213,9 +245,22 @@ function FolderSetupScreen({ projectId }: { projectId: string }): JSX.Element {
   } | null>(null)
   const [createdFolderName, setCreatedFolderName] = React.useState<string | null>(null)
 
+  const [mismatchError, setMismatchError] = React.useState<string | null>(null)
+
+  const handleOpenExisting = React.useCallback(async () => {
+    setMismatchError(null)
+    const result = await openLocalFolder()
+    if (!result.success && result.reason === 'mismatch') {
+      setMismatchError(
+        `Wrong folder — only ${result.matched} of ${result.total} project files matched (${result.matchPct}%). Need 60%+. Please choose the correct project folder or use "Create Project Folder".`
+      )
+    }
+  }, [openLocalFolder])
+
   const handleCreate = React.useCallback(async () => {
     setCreateState('creating')
     setProgress(null)
+    setMismatchError(null)
 
     const result = await createProjectFolder(
       (current, total, currentPath) => {
@@ -365,12 +410,19 @@ function FolderSetupScreen({ projectId }: { projectId: string }): JSX.Element {
           </div>
           <button
             type="button"
-            onClick={openLocalFolder}
+            onClick={handleOpenExisting}
             className="w-full rounded-lg border border-[var(--border-default)] hover:border-[var(--border-emphasis)] bg-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium py-2.5 px-4 text-sm transition-colors active:scale-95"
           >
             Choose existing folder
           </button>
         </div>
+
+        {/* Mismatch error */}
+        {mismatchError && (
+          <div className="w-full rounded-lg bg-[var(--status-error-bg)] border border-[var(--status-error)]/20 px-4 py-3 text-xs text-[var(--status-error)] leading-relaxed">
+            {mismatchError}
+          </div>
+        )}
       </div>
     </div>
   )
