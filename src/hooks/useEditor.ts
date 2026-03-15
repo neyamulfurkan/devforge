@@ -384,7 +384,7 @@ export function useEditor(projectId: string) {
         markClean()
       }
     },
-    [storeOpenLocalFile, setContent, markClean]
+    [projectId, storeOpenLocalFile, setContent, markClean]
   )
 
   // ── Local-mode: save current file to disk ────────────────────────────────

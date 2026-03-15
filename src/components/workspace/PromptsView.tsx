@@ -192,7 +192,7 @@ function FilePromptRow({
           ? 'bg-[var(--accent-light)] border-l-2 border-l-[var(--accent-primary)]'
           : 'hover:bg-[var(--bg-quaternary)]'
       )}
-      aria-selected={isSelected}
+      aria-pressed={isSelected}
       aria-label={`View prompt for ${file.filePath}`}
     >
       {/* File number */}

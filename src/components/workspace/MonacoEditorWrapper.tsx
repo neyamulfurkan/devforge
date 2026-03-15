@@ -89,8 +89,8 @@ export default function MonacoEditorWrapper({
   const { settings } = useSettings()
 
   // Ref to the live Monaco editor instance
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const editorInstanceRef = useRef<any>(null)
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  const editorInstanceRef = useRef<unknown>(null)
 
   // Stable ref for debounced callback to avoid stale closures
   const onContentChangeRef = useRef(onContentChange)
