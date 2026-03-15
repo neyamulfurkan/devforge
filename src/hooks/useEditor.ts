@@ -179,10 +179,8 @@ export function useEditor(projectId: string) {
   // ── DB-mode: save file ────────────────────────────────────────────────────
 
   const saveCurrentFile = useCallback(async () => {
-    if (isLocalMode) {
-      // Local save is handled by saveLocalFile below
-      return
-    }
+    // In local mode, DB save is still needed to keep cloud in sync
+    // (local disk save is handled separately by saveLocalFile)
     if (!openFileId || isSavingRef.current) return
 
     isSavingRef.current = true
@@ -406,12 +404,15 @@ export function useEditor(projectId: string) {
   // ── Unified save (respects current mode) ─────────────────────────────────
 
   const save = useCallback(async () => {
-    if (isLocalMode) {
+    // Always write to local disk first if handle exists — VSCode watches this
+    if (openLocalHandle) {
       await saveLocalFile()
-    } else {
+    }
+    // Always write to DB if we have a file ID — keeps cloud in sync
+    if (openFileId) {
       await saveCurrentFile()
     }
-  }, [isLocalMode, saveLocalFile, saveCurrentFile])
+  }, [openLocalHandle, openFileId, saveLocalFile, saveCurrentFile])
 
   // ── Expose setContent wrapped to also mark dirty ──────────────────────────
 
@@ -436,15 +437,25 @@ export function useEditor(projectId: string) {
   // ── Auto-save on dirty ────────────────────────────────────────────────────
 
   useEffect(() => {
-    const hasOpenTarget = isLocalMode ? !!openLocalHandle : !!openFileId
-    if (!isDirty || !hasOpenTarget) return
+    // Save when dirty — if local handle exists, always save to disk regardless of mode
+    // If openFileId exists, also save to DB
+    const hasLocalTarget = !!openLocalHandle
+    const hasDBTarget = !!openFileId
+    if (!isDirty || (!hasLocalTarget && !hasDBTarget)) return
 
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current)
     }
 
-    autoSaveTimerRef.current = setTimeout(() => {
-      save()
+    autoSaveTimerRef.current = setTimeout(async () => {
+      // Save to local disk first — this is what VSCode watches live
+      if (hasLocalTarget) {
+        await saveLocalFile()
+      }
+      // Save to DB regardless of mode — keeps cloud in sync
+      if (hasDBTarget) {
+        await saveCurrentFile()
+      }
     }, 500)
 
     return () => {
@@ -452,7 +463,7 @@ export function useEditor(projectId: string) {
         clearTimeout(autoSaveTimerRef.current)
       }
     }
-  }, [isDirty, isLocalMode, openLocalHandle, openFileId, fileContent, save])
+  }, [isDirty, isLocalMode, openLocalHandle, openFileId, fileContent, saveLocalFile, saveCurrentFile])
 
   // ── Cleanup on unmount ────────────────────────────────────────────────────
 

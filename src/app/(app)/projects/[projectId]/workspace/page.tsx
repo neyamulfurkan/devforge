@@ -228,9 +228,67 @@ function NextFileBar({ projectId }: { projectId: string }): JSX.Element | null {
     setCopyState('loading')
 
     try {
-      // 1 — always open via DB mode so openFileId is set correctly in the store
-      // This ensures EditorLayout picks up the file regardless of local/DB mode
+      // 1 — open via DB mode so openFileId is set correctly in the store
       await openFile(nextFile.id)
+
+      // 1b — find the disk file handle, write existing DB code to disk NOW,
+      // and link the handle so future Monaco edits also auto-save to disk
+      const { localModeByProject } = useEditorStore.getState()
+      const localState = localModeByProject[projectId]
+      if (localState?.localFileTree?.length) {
+        // Tree walker — finds a file node by path
+        const findDiskNode = (
+          nodes: import('@/store/editorStore').LocalFileNode[],
+          targetPath: string
+        ): import('@/store/editorStore').LocalFileNode | null => {
+          for (const node of nodes) {
+            if (node.type === 'file') {
+              const nodePath = node.path.replace(/^\/+/, '')
+              const target = targetPath.replace(/^\/+/, '')
+              if (
+                nodePath === target ||
+                nodePath.endsWith('/' + target) ||
+                target.endsWith('/' + nodePath)
+              ) return node
+            }
+            if (node.type === 'folder' && node.children?.length) {
+              const found = findDiskNode(node.children, targetPath)
+              if (found) return found
+            }
+          }
+          return null
+        }
+
+        const diskNode = findDiskNode(localState.localFileTree, nextFile.filePath)
+        if (diskNode && diskNode.type === 'file') {
+          const diskHandle = diskNode.handle as FileSystemFileHandle
+
+          // Step A — fetch the existing DB code for this file
+          let existingCode = ''
+          try {
+            const codeRes = await fetch(`/api/projects/${projectId}/files/${nextFile.id}/code`)
+            if (codeRes.ok) {
+              const codeJson = await codeRes.json()
+              existingCode = codeJson.data?.codeContent ?? ''
+            }
+          } catch { /* no code yet — will write empty file */ }
+
+          // Step B — write to disk RIGHT NOW so VSCode sees it immediately
+          try {
+            const writable = await diskHandle.createWritable()
+            await writable.write(existingCode)
+            await writable.close()
+          } catch { /* permission denied or handle stale — skip */ }
+
+          // Step C — link the handle in the store so every future
+          // Monaco keystroke/paste auto-saves to this disk file (500ms debounce)
+          useEditorStore.getState().openLocalFile(
+            projectId,
+            diskHandle,
+            diskNode.path
+          )
+        }
+      }
 
       // 2 — build prompt: 100% identical to GcdPlusCodeButton in FileRow.tsx
       const gcd = docData?.rawContent ?? ''
