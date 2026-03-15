@@ -71,14 +71,18 @@ const MonacoEditor = dynamic(
 interface MonacoEditorWrapperProps {
   file: FileWithContent | null
   onContentChange: (content: string) => void
+  isLocalMode?: boolean
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function MonacoEditorWrapper({
   file,
   onContentChange,
+  isLocalMode: isLocalModeProp,
 }: MonacoEditorWrapperProps): JSX.Element {
-  const { isReadOnly, isLocalMode, fileContent } = useEditorStore()
+  const { isReadOnly, isLocalMode: isLocalModeStore, fileContent } = useEditorStore()
+  // Prefer prop (passed from parent) but fall back to store value
+  const isLocalMode = isLocalModeProp ?? isLocalModeStore
   const { settings } = useSettings()
 
   // Stable ref for debounced callback to avoid stale closures
@@ -99,14 +103,19 @@ export default function MonacoEditorWrapper({
   // Resolve editor settings from user preferences with fallbacks
   const editorTheme = settings?.editorTheme ?? DEFAULT_EDITOR_THEME
   const editorFontSize = settings?.editorFontSize ?? DEFAULT_EDITOR_FONT_SIZE
-  const language = file ? getFileLanguage(file.filePath) : 'plaintext'
+
+  // Resolve active path — local mode uses openLocalPath, DB mode uses file.filePath
+  const { openLocalPath } = useEditorStore()
+  const activePath = isLocalMode ? (openLocalPath ?? '') : (file?.filePath ?? '')
+  const language = activePath ? getFileLanguage(activePath) : 'plaintext'
+  const hasLocalFileOpen = isLocalMode && !!openLocalPath
 
   // Detect mobile to disable minimap (improves perf on small screens)
   const isMobile =
     typeof window !== 'undefined' && window.innerWidth < 768
 
   // ── Empty state when no file is selected ──
-  if (!file) {
+  if (!file && !hasLocalFileOpen) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-[#1e1e1e]">
         <EmptyState
@@ -122,7 +131,7 @@ export default function MonacoEditorWrapper({
   // In local mode, content lives in editorStore.fileContent (loaded from disk).
   // In DB mode, content is seeded from file.codeContent on first open, then
   // kept in sync via onContentChange / auto-save.
-  const editorValue = isLocalMode ? fileContent : (file.codeContent ?? fileContent)
+  const editorValue = isLocalMode ? fileContent : (file?.codeContent ?? fileContent)
 
   return (
     <div className="h-full w-full overflow-hidden">

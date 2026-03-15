@@ -252,6 +252,7 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
           <MonacoEditorWrapper
             file={openFile as FileWithContent | null}
             onContentChange={handleContentChange}
+            isLocalMode={isLocalMode}
           />
         </div>
       </div>
