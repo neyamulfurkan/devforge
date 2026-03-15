@@ -380,6 +380,247 @@ export function useEditor(projectId: string) {
     }
   }, [])
 
+  // ── Create project folder on disk ────────────────────────────────────────
+  // Asks user to pick a location, then automatically creates every file and
+  // folder from the project's file tree inside a new named subfolder.
+  // Files that have code in Cloudinary get their content written immediately.
+  // Empty files are created as blank files ready to fill.
+  // The created folder is auto-linked to this project in IndexedDB.
+
+  const createProjectFolder = useCallback(
+    async (
+      onProgress?: (current: number, total: number, currentPath: string) => void
+    ): Promise<{ success: boolean; folderName: string | null }> => {
+      if (typeof window === 'undefined' || !('showDirectoryPicker' in window)) {
+        console.warn('File System Access API not supported in this browser.')
+        return { success: false, folderName: null }
+      }
+
+      try {
+        // Step 1 — let user pick WHERE to create the project folder
+        const parentHandle = await (
+          window as Window & {
+            showDirectoryPicker: (opts?: {
+              mode?: string
+            }) => Promise<FileSystemDirectoryHandle>
+          }
+        ).showDirectoryPicker({ mode: 'readwrite' })
+
+        // Step 2 — derive a safe folder name from the project files
+        // Use the first file's root segment as the project folder name,
+        // falling back to projectId if files aren't loaded yet
+        const rootName =
+          files.length > 0
+            ? (files[0]?.filePath.split('/')[0] ?? `project-${projectId.slice(0, 8)}`)
+            : `project-${projectId.slice(0, 8)}`
+
+        // Step 3 — create the root project folder inside the chosen location
+        const projectDirHandle = await parentHandle.getDirectoryHandle(rootName, {
+          create: true,
+        })
+
+        // Step 4 — helper: get or create nested directory from a path like
+        // "src/components/workspace" → creates src/, src/components/, src/components/workspace/
+        async function getOrCreateDir(
+          root: FileSystemDirectoryHandle,
+          relativePath: string
+        ): Promise<FileSystemDirectoryHandle> {
+          const parts = relativePath.split('/').filter(Boolean)
+          let current = root
+          for (const part of parts) {
+            current = await current.getDirectoryHandle(part, { create: true })
+          }
+          return current
+        }
+
+        // Step 5 — collect all unique directory paths from file list
+        const dirPaths = new Set<string>()
+        for (const f of files) {
+          const segments = f.filePath.split('/')
+          // Build every ancestor path e.g. src, src/app, src/app/components
+          for (let i = 1; i < segments.length; i++) {
+            dirPaths.add(segments.slice(0, i).join('/'))
+          }
+        }
+
+        // Step 6 — create all directories first
+        for (const dirPath of dirPaths) {
+          await getOrCreateDir(projectDirHandle, dirPath)
+        }
+
+        // Step 7 — create all files, writing cloud content where available
+        const total = files.length
+        let current = 0
+
+        for (const f of files) {
+          current++
+          onProgress?.(current, total, f.filePath)
+
+          // Split path into directory part and filename
+          const segments = f.filePath.split('/')
+          const fileName = segments[segments.length - 1] ?? f.fileName
+          const dirPath = segments.slice(0, -1).join('/')
+
+          // Get the parent directory handle
+          const dirHandle =
+            dirPath
+              ? await getOrCreateDir(projectDirHandle, dirPath)
+              : projectDirHandle
+
+          // Create the file
+          const fileHandle = await dirHandle.getFileHandle(fileName, { create: true })
+
+          // Try to fetch existing code from Cloudinary / DB
+          let content = ''
+          try {
+            const res = await fetch(
+              `/api/projects/${projectId}/files/${f.id}/code`
+            )
+            if (res.ok) {
+              const json = await res.json()
+              content = json.data?.codeContent ?? ''
+            }
+          } catch {
+            // No content available — file stays empty, that's fine
+          }
+
+          // Write content (empty string creates a valid empty file)
+          const writable = await fileHandle.createWritable()
+          await writable.write(content)
+          await writable.close()
+        }
+
+        // Step 8 — auto-link folder to this project exactly like openLocalFolder
+        await saveHandleForProject(projectId, projectDirHandle)
+        setLocalFolderHandle(projectDirHandle)
+        switchToLocalMode()
+
+        // Step 9 — walk the created folder to build the file tree
+        const tree = await walkDirectory(projectDirHandle)
+        setLocalFileTree(tree)
+
+        return { success: true, folderName: rootName }
+      } catch (err) {
+        // User cancelled the picker — not an error
+        if ((err as DOMException).name === 'AbortError') {
+          return { success: false, folderName: null }
+        }
+        console.error('createProjectFolder error:', err)
+        return { success: false, folderName: null }
+      }
+    },
+    [projectId, files, setLocalFolderHandle, setLocalFileTree, switchToLocalMode]
+  )
+
+  // ── Cloudinary: push local file to cloud ─────────────────────────────────
+  // Reads the local file from disk and uploads it to Cloudinary so mobile
+  // can access it. Works in both local mode (reads from disk handle) and
+  // DB mode (reads from fileContent store).
+
+  const pushToCloudinary = useCallback(
+    async (fileId: string): Promise<void> => {
+      // Get content: in local mode read from disk; in DB mode use store content
+      let content = fileContent
+
+      if (isLocalMode && openLocalHandle) {
+        try {
+          const f = await openLocalHandle.getFile()
+          content = await f.text()
+        } catch {
+          // Fall back to store content
+        }
+      }
+
+      if (!content) return
+
+      await fetch(`/api/projects/${projectId}/files/${fileId}/code`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      })
+    },
+    [projectId, fileContent, isLocalMode, openLocalHandle]
+  )
+
+  // ── Cloudinary: pull cloud file to local disk ─────────────────────────────
+  // Fetches code from Cloudinary and writes it directly to the local disk
+  // file via FileSystemFileHandle.createWritable(). After successful write,
+  // deletes the cloud copy to free Cloudinary storage.
+
+  const pullFromCloudinary = useCallback(
+    async (fileId: string): Promise<string | null> => {
+      try {
+        // Fetch the code content from Cloudinary via our API
+        const res = await fetch(`/api/projects/${projectId}/files/${fileId}/code`)
+        if (!res.ok) return null
+        const json = await res.json()
+        const code: string = json.data?.codeContent ?? ''
+        if (!code) return null
+
+        if (isLocalMode) {
+          // In local mode — find the file handle and write to disk
+          const { localFileTree } = useEditorStore.getState()
+
+          const findHandle = (
+            nodes: LocalFileNode[],
+            targetId: string
+          ): FileSystemFileHandle | null => {
+            for (const node of nodes) {
+              if (node.type === 'file' && node.path === targetId) {
+                return node.handle as FileSystemFileHandle
+              }
+              if (node.type === 'folder' && node.children) {
+                const found = findHandle(node.children, targetId)
+                if (found) return found
+              }
+            }
+            return null
+          }
+
+          // Try matching by fileId first, then by filePath from files list
+          const targetFile = files.find((f) => f.id === fileId)
+          const handle = targetFile
+            ? findHandle(localFileTree, targetFile.filePath)
+            : null
+
+          if (handle) {
+            const writable = await handle.createWritable()
+            await writable.write(code)
+            await writable.close()
+          }
+        }
+
+        // Delete from Cloudinary after successful pull to free storage
+        await fetch(`/api/projects/${projectId}/files/${fileId}/code`, {
+          method: 'DELETE',
+        })
+
+        return code
+      } catch {
+        return null
+      }
+    },
+    [projectId, isLocalMode, files]
+  )
+
+  // ── Cloudinary: check if cloud version exists ─────────────────────────────
+  // Lightweight HEAD check — no content download. Used by sync badges.
+
+  const checkCloudSync = useCallback(
+    async (fileId: string): Promise<boolean> => {
+      try {
+        const res = await fetch(
+          `/api/projects/${projectId}/files/${fileId}/code`,
+          { method: 'HEAD' }
+        )
+        return res.ok
+      } catch {
+        return false
+      }
+    },
+    [projectId]
+  )
+
   return {
     // State
     openFileId,
@@ -400,6 +641,12 @@ export function useEditor(projectId: string) {
     openLocalFolder,
     openLocalFile,
     saveLocalFile,
+    createProjectFolder,
+
+    // Cloudinary sync actions
+    pushToCloudinary,
+    pullFromCloudinary,
+    checkCloudSync,
 
     // Unified
     save,

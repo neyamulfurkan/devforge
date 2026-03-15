@@ -4,7 +4,7 @@
 import { useState, useMemo, useCallback } from 'react'
 
 // 2. Third-party library imports
-import { ChevronDown, ChevronRight, Terminal, Package, Copy } from 'lucide-react'
+import { ChevronDown, ChevronRight, Terminal, Package, Copy, Upload } from 'lucide-react'
 
 // 3. Internal imports — UI components
 import { Button } from '@/components/ui/button'
@@ -269,6 +269,39 @@ export function FileSequenceTable({
           >
             <Terminal className="h-3.5 w-3.5" />
             Generate Script
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              // Push all complete files to Cloudinary in parallel (max 5 at a time)
+              const completeFiles = files.filter((f) => f.status === 'COMPLETE')
+              const chunks: FileWithContent[][] = []
+              for (let i = 0; i < completeFiles.length; i += 5) {
+                chunks.push(completeFiles.slice(i, i + 5))
+              }
+              for (const chunk of chunks) {
+                await Promise.all(
+                  chunk.map((f) =>
+                    fetch(`/api/projects/${projectId}/files/${f.id}/code`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ content: f.codeContent ?? '' }),
+                    })
+                  )
+                )
+              }
+            }}
+            className={cn(
+              'gap-1.5 border-[var(--border-default)] text-[var(--text-secondary)]',
+              'hover:text-[var(--text-primary)] hover:border-[var(--border-emphasis)]'
+            )}
+            title="Push all complete files to cloud so mobile can access them"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Push All to Cloud
           </Button>
 
           <Button

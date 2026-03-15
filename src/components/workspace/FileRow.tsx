@@ -1,11 +1,11 @@
 'use client'
 
 // 1. React imports
-import { useState, useCallback, memo } from 'react'
+import { useState, useCallback, memo, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 // 2. Third-party imports
-import { ChevronDown, ChevronRight, FileCode, Loader2, FolderOpen, Copy, Check, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileCode, Loader2, FolderOpen, Copy, Check, X, Upload, Download, Eye, Send, CloudOff, Cloud } from 'lucide-react'
 
 // 3. Internal imports — UI components
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ import { CopyButton } from '@/components/shared/CopyButton'
 // 5. Internal imports — hooks
 import { useFiles } from '@/hooks/useFiles'
 import { useDocument } from '@/hooks/useDocument'
+import { useEditor } from '@/hooks/useEditor'
 
 // 6. Internal imports — types
 import type { FileWithContent, FileStatus } from '@/types'
@@ -341,6 +342,265 @@ function ExpandSection({
   )
 }
 
+// ─── CloudSyncButton ──────────────────────────────────────────────────────────
+// Handles Push (laptop→cloud), Pull (cloud→laptop), View (mobile read-only),
+// and Paste & Send (mobile write) in one self-contained component.
+
+function CloudSyncButton({
+  file,
+  projectId,
+}: {
+  file: FileWithContent
+  projectId: string
+}): JSX.Element {
+  const [cloudExists, setCloudExists] = useState<boolean | null>(null)
+  const [pushState, setPushState]     = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [pullState, setPullState]     = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [viewOpen, setViewOpen]       = useState(false)
+  const [viewContent, setViewContent] = useState('')
+  const [pasteOpen, setPasteOpen]     = useState(false)
+  const [pasteText, setPasteText]     = useState('')
+  const [pasteState, setPasteState]   = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+
+  const { pushToCloudinary, pullFromCloudinary, checkCloudSync, isLocalMode } = useEditor(projectId)
+
+  // Check cloud sync status on mount
+  useEffect(() => {
+    checkCloudSync(file.id).then(setCloudExists)
+  }, [file.id, checkCloudSync])
+
+  const handlePush = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setPushState('loading')
+    try {
+      await pushToCloudinary(file.id)
+      setPushState('done')
+      setCloudExists(true)
+      setTimeout(() => setPushState('idle'), 2000)
+    } catch {
+      setPushState('error')
+      setTimeout(() => setPushState('idle'), 2000)
+    }
+  }, [file.id, pushToCloudinary])
+
+  const handlePull = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setPullState('loading')
+    try {
+      const code = await pullFromCloudinary(file.id)
+      if (code) {
+        setPullState('done')
+        setCloudExists(false)
+        setTimeout(() => setPullState('idle'), 2000)
+      } else {
+        setPullState('error')
+        setTimeout(() => setPullState('idle'), 2000)
+      }
+    } catch {
+      setPullState('error')
+      setTimeout(() => setPullState('idle'), 2000)
+    }
+  }, [file.id, pullFromCloudinary])
+
+  const handleView = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setViewOpen(true)
+    try {
+      const res = await fetch(`/api/projects/${projectId}/files/${file.id}/code`)
+      const json = await res.json()
+      setViewContent(json.data?.codeContent ?? '(empty)')
+    } catch {
+      setViewContent('Failed to load code.')
+    }
+  }, [projectId, file.id])
+
+  const handlePasteSubmit = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!pasteText.trim()) return
+    setPasteState('loading')
+    try {
+      await fetch(`/api/projects/${projectId}/files/${file.id}/code`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: pasteText }),
+      })
+      setPasteState('done')
+      setCloudExists(true)
+      setPasteText('')
+      setTimeout(() => { setPasteState('idle'); setPasteOpen(false) }, 1500)
+    } catch {
+      setPasteState('error')
+      setTimeout(() => setPasteState('idle'), 2000)
+    }
+  }, [projectId, file.id, pasteText])
+
+  return (
+    <>
+      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        {/* Cloud status dot */}
+        {cloudExists === true && (
+          <span
+            className="h-1.5 w-1.5 rounded-full bg-[var(--accent-primary)] flex-shrink-0"
+            title="Cloud version available"
+          />
+        )}
+
+        {/* Push to cloud (laptop → Cloudinary) */}
+        {isLocalMode && (
+          <button
+            type="button"
+            onClick={handlePush}
+            disabled={pushState === 'loading'}
+            title="Push to cloud (share with mobile)"
+            className="h-7 w-7 flex items-center justify-center rounded-md border border-[var(--border-default)] bg-[var(--bg-quaternary)] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] hover:border-[var(--accent-border)] hover:bg-[var(--accent-light)] transition-all duration-150 disabled:opacity-50"
+          >
+            {pushState === 'loading' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : pushState === 'done' ? (
+              <Check className="h-3.5 w-3.5 text-[var(--status-complete)]" />
+            ) : (
+              <Upload className="h-3.5 w-3.5" />
+            )}
+          </button>
+        )}
+
+        {/* Pull from cloud (Cloudinary → local disk) — only when cloud version exists */}
+        {cloudExists && isLocalMode && (
+          <button
+            type="button"
+            onClick={handlePull}
+            disabled={pullState === 'loading'}
+            title="Pull from cloud to local disk"
+            className="h-7 w-7 flex items-center justify-center rounded-md border border-[var(--accent-border)] bg-[var(--accent-light)] text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-white transition-all duration-150 disabled:opacity-50"
+          >
+            {pullState === 'loading' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : pullState === 'done' ? (
+              <Check className="h-3.5 w-3.5" />
+            ) : (
+              <Download className="h-3.5 w-3.5" />
+            )}
+          </button>
+        )}
+
+        {/* View code (mobile read-only — fetches from cloud) */}
+        <button
+          type="button"
+          onClick={handleView}
+          title="View code (copy to clipboard for Claude)"
+          className="h-7 w-7 flex items-center justify-center rounded-md border border-[var(--border-default)] bg-[var(--bg-quaternary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--border-emphasis)] transition-all duration-150"
+        >
+          <Eye className="h-3.5 w-3.5" />
+        </button>
+
+        {/* Paste & send (mobile — paste Claude output → Cloudinary) */}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setPasteOpen(true) }}
+          title="Paste code from Claude → send to cloud"
+          className="h-7 w-7 flex items-center justify-center rounded-md border border-[var(--border-default)] bg-[var(--bg-quaternary)] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] hover:border-[var(--accent-border)] hover:bg-[var(--accent-light)] transition-all duration-150"
+        >
+          <Send className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* View code modal — read-only, full content + copy */}
+      {viewOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4"
+          onClick={() => setViewOpen(false)}
+        >
+          <div
+            className="w-full sm:max-w-2xl max-h-[85vh] flex flex-col rounded-t-2xl sm:rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-subtle)] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)]">
+              <div>
+                <p className="text-sm font-medium text-[var(--text-primary)] font-mono truncate">
+                  {file.filePath}
+                </p>
+                <p className="text-xs text-[var(--text-tertiary)] mt-0.5">
+                  Read-only — copy to paste into Claude
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <CopyButton value={viewContent} size="sm" label="Copy All" />
+                <button
+                  type="button"
+                  onClick={() => setViewOpen(false)}
+                  className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] text-xl leading-none"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <pre className="text-xs font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words p-4 leading-relaxed">
+                {viewContent || <Loader2 className="h-4 w-4 animate-spin" />}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Paste & send modal — mobile workflow */}
+      {pasteOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4"
+          onClick={() => setPasteOpen(false)}
+        >
+          <div
+            className="w-full sm:max-w-2xl flex flex-col rounded-t-2xl sm:rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-subtle)] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)]">
+              <div>
+                <p className="text-sm font-medium text-[var(--text-primary)]">
+                  Paste Claude's output
+                </p>
+                <p className="text-xs text-[var(--text-tertiary)] mt-0.5 font-mono truncate">
+                  {file.filePath}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPasteOpen(false)}
+                className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <textarea
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                placeholder="Paste the complete file code here…"
+                rows={12}
+                className="w-full resize-none rounded-md px-3 py-2 bg-[var(--bg-input)] border border-[var(--border-default)] text-xs font-mono text-[var(--text-primary)] placeholder:text-[var(--text-quaternary)] focus:outline-none focus:border-[var(--accent-primary)] transition-colors"
+                autoFocus
+              />
+              <button
+                type="button"
+                disabled={!pasteText.trim() || pasteState === 'loading'}
+                onClick={handlePasteSubmit}
+                className="w-full h-10 rounded-lg bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] disabled:opacity-50 text-white font-medium text-sm flex items-center justify-center gap-2 transition-colors"
+              >
+                {pasteState === 'loading' ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Sending…</>
+                ) : pasteState === 'done' ? (
+                  <><Check className="h-4 w-4" /> Sent to cloud ✓</>
+                ) : (
+                  <><Send className="h-4 w-4" /> Send to Cloud</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 // ─── FileRow ──────────────────────────────────────────────────────────────────
 
 export const FileRow = memo(function FileRow({
@@ -491,6 +751,9 @@ export const FileRow = memo(function FileRow({
           >
             <FolderOpen className="h-3.5 w-3.5" />
           </button>
+
+          {/* Cloud sync — Push/Pull/View/Paste */}
+          <CloudSyncButton file={file} projectId={projectId} />
         </div>
 
         {/* Phase — far right, hidden on hover */}
@@ -601,6 +864,9 @@ export const FileRow = memo(function FileRow({
                 requiredFiles={file.requiredFiles}
               />
             )}
+
+            {/* Cloud sync actions — always available in expanded panel */}
+            <CloudSyncButton file={file} projectId={projectId} />
           </div>
 
           {/* JSON Registry Entry — paste Claude's output to append to Section 11 */}

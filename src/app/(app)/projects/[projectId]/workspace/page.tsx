@@ -16,7 +16,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 
 // 4b. Additional icon imports for EditorLayout
-import { FolderOpen } from 'lucide-react'
+import { FolderOpen, FolderDown, Loader2, CheckCircle2 } from 'lucide-react'
 
 // 5. Internal imports — workspace components
 import { WorkspaceNav } from '@/components/workspace/WorkspaceNav'
@@ -166,6 +166,184 @@ function EditorModeSwitcher({ projectId }: { projectId: string }): JSX.Element {
   )
 }
 
+// ─── Folder setup screen ──────────────────────────────────────────────────────
+// Shown when local mode is active but no folder is linked yet.
+// Two options: pick an existing folder, or auto-create the full project structure.
+
+function FolderSetupScreen({ projectId }: { projectId: string }): JSX.Element {
+  const { openLocalFolder, createProjectFolder } = useEditor(projectId)
+  type CreateState = 'idle' | 'creating' | 'done' | 'error'
+  const [createState, setCreateState] = React.useState<CreateState>('idle')
+  const [progress, setProgress] = React.useState<{
+    current: number
+    total: number
+    currentPath: string
+  } | null>(null)
+  const [createdFolderName, setCreatedFolderName] = React.useState<string | null>(null)
+
+  const handleCreate = React.useCallback(async () => {
+    setCreateState('creating')
+    setProgress(null)
+
+    const result = await createProjectFolder(
+      (current, total, currentPath) => {
+        setProgress({ current, total, currentPath })
+      }
+    )
+
+    if (result.success) {
+      setCreatedFolderName(result.folderName)
+      setCreateState('done')
+    } else {
+      // User cancelled — go back to idle silently
+      setCreateState('idle')
+      setProgress(null)
+    }
+  }, [createProjectFolder])
+
+  // Done state — folder created and linked, editor will load automatically
+  if (createState === 'done') {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[var(--bg-primary)]">
+        <div className="flex flex-col items-center gap-4 max-w-sm text-center px-6">
+          <div className="h-16 w-16 rounded-2xl bg-[var(--status-complete-bg)] flex items-center justify-center">
+            <CheckCircle2 className="h-8 w-8 text-[var(--status-complete)]" />
+          </div>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">
+            Project folder created
+          </h2>
+          <p className="text-sm text-[var(--text-secondary)]">
+            <span className="font-mono text-[var(--text-primary)]">{createdFolderName}/</span>
+            {' '}has been created with all your project files. The editor is loading…
+          </p>
+          <div className="flex items-center gap-2 text-sm text-[var(--text-tertiary)]">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Opening editor…
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Creating state — show live progress
+  if (createState === 'creating') {
+    const pct = progress
+      ? Math.round((progress.current / progress.total) * 100)
+      : 0
+
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[var(--bg-primary)]">
+        <div className="flex flex-col items-center gap-5 max-w-sm w-full text-center px-6">
+          <div className="h-16 w-16 rounded-2xl bg-[var(--accent-light)] flex items-center justify-center">
+            <Loader2 className="h-8 w-8 text-[var(--accent-primary)] animate-spin" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">
+              Creating project folder…
+            </h2>
+            <p className="text-xs text-[var(--text-tertiary)] font-mono truncate max-w-xs">
+              {progress?.currentPath ?? 'Setting up directories…'}
+            </p>
+          </div>
+
+          {/* Progress bar */}
+          <div className="w-full space-y-1.5">
+            <div className="w-full h-1.5 rounded-full bg-[var(--bg-quaternary)] overflow-hidden">
+              <div
+                className="h-full rounded-full bg-[var(--accent-primary)] transition-all duration-150"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <p className="text-xs text-[var(--text-tertiary)]">
+              {progress
+                ? `${progress.current} / ${progress.total} files`
+                : 'Starting…'}
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Idle state — two options
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-[var(--bg-primary)]">
+      <div className="flex flex-col items-center gap-6 max-w-md w-full text-center px-6">
+        {/* Header */}
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+            Set up local editing
+          </h2>
+          <p className="text-sm text-[var(--text-secondary)]">
+            Choose how you want to connect this project to your laptop.
+          </p>
+        </div>
+
+        {/* Option 1 — Create project folder (recommended) */}
+        <div className="w-full rounded-xl border-2 border-[var(--accent-border)] bg-[var(--accent-light)] p-5 text-left space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="h-10 w-10 rounded-lg bg-[var(--accent-primary)] flex items-center justify-center flex-shrink-0">
+              <FolderDown className="h-5 w-5 text-white" />
+            </div>
+            <div className="space-y-0.5">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">
+                Create project folder
+                <span className="ml-2 text-[10px] font-medium px-1.5 py-0.5 rounded bg-[var(--accent-primary)] text-white">
+                  Recommended
+                </span>
+              </p>
+              <p className="text-xs text-[var(--text-secondary)]">
+                Pick a location on your laptop. DevForge will automatically
+                create all {'{'}N{'}'} files and folders from your project structure.
+                Files with existing code are written immediately.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleCreate}
+            className="w-full rounded-lg bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white font-medium py-2.5 px-4 text-sm transition-colors active:scale-95"
+          >
+            Choose location and create folder
+          </button>
+        </div>
+
+        {/* Divider */}
+        <div className="flex items-center gap-3 w-full">
+          <div className="flex-1 h-px bg-[var(--border-subtle)]" />
+          <span className="text-xs text-[var(--text-tertiary)]">or</span>
+          <div className="flex-1 h-px bg-[var(--border-subtle)]" />
+        </div>
+
+        {/* Option 2 — Open existing folder */}
+        <div className="w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-5 text-left space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="h-10 w-10 rounded-lg bg-[var(--bg-quaternary)] flex items-center justify-center flex-shrink-0">
+              <FolderOpen className="h-5 w-5 text-[var(--text-secondary)]" />
+            </div>
+            <div className="space-y-0.5">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">
+                Open existing folder
+              </p>
+              <p className="text-xs text-[var(--text-secondary)]">
+                Already have the project folder on your laptop?
+                Select it directly to link it to this project.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={openLocalFolder}
+            className="w-full rounded-lg border border-[var(--border-default)] hover:border-[var(--border-emphasis)] bg-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium py-2.5 px-4 text-sm transition-colors active:scale-95"
+          >
+            Choose existing folder
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Editor layout sub-component ─────────────────────────────────────────────
 // Three-panel layout: file tree (left) | editor (center) | top bar (pinned top)
 
@@ -207,29 +385,7 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
 
   // ── Local folder not yet assigned — show assign prompt ───────────────────
   if (isLocalMode && !localFolderHandle) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-[var(--bg-primary)]">
-        <div className="flex flex-col items-center gap-4 max-w-sm text-center px-6">
-          <div className="h-16 w-16 rounded-2xl bg-[var(--accent-light)] flex items-center justify-center">
-            <FolderOpen className="h-8 w-8 text-[var(--accent-primary)]" />
-          </div>
-          <h2 className="text-base font-semibold text-[var(--text-primary)]">
-            Open a local folder
-          </h2>
-          <p className="text-sm text-[var(--text-secondary)]">
-            Select a folder from your laptop to browse and edit its files directly.
-            No files are uploaded — everything stays local.
-          </p>
-          <button
-            type="button"
-            onClick={openLocalFolder}
-            className="w-full rounded-lg bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white font-medium py-2.5 px-4 text-sm transition-colors active:scale-95"
-          >
-            Choose Folder
-          </button>
-        </div>
-      </div>
-    )
+    return <FolderSetupScreen projectId={projectId} />
   }
 
   return (
