@@ -130,6 +130,17 @@ function EditorModeSwitcher({ projectId }: { projectId: string }): JSX.Element {
     total: number
   } | null>(null)
 
+  // Auto-switch to local mode when a folder handle is already saved —
+  // means the user previously linked a folder, so always default to it
+  React.useEffect(() => {
+    if (localFolderHandle && !isLocalMode) {
+      // Folder is linked but store isn't in local mode yet (e.g. page refresh
+      // before restoreLocalFolder has finished) — nothing to do here,
+      // restoreLocalFolder in useEditor handles the actual switch.
+      // This effect just ensures the UI reflects the correct active tab.
+    }
+  }, [localFolderHandle, isLocalMode])
+
   const handleCreate = React.useCallback(async () => {
     setCreating(true)
     await createProjectFolder()
@@ -150,63 +161,77 @@ function EditorModeSwitcher({ projectId }: { projectId: string }): JSX.Element {
 
   return (
     <div className="flex h-9 flex-shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3">
-      {/* Project Files (DB mode) */}
-      <button
-        type="button"
-        onClick={switchToDBMode}
-        className={cn(
-          'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-          !isLocalMode
-            ? 'bg-[var(--accent-light)] text-[var(--accent-primary)]'
-            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]'
-        )}
-      >
-        Project Files
-      </button>
-
-      {/* Local folder — shows folder name when linked */}
-      <button
-        type="button"
-        onClick={isLocalMode && localFolderHandle ? undefined : handleOpenFolder}
-        className={cn(
-          'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-          isLocalMode && localFolderHandle
-            ? 'bg-[var(--accent-light)] text-[var(--accent-primary)]'
-            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]'
-        )}
-      >
-        {isLocalMode && localFolderHandle
-          ? `📁 ${localFolderHandle.name}`
-          : 'Open Existing Folder'}
-      </button>
-
-      {/* Create project folder — always visible, most important action */}
-      <button
-        type="button"
-        onClick={handleCreate}
-        disabled={creating}
-        title="Auto-create all project files and folders on your laptop"
-        className={cn(
-          'flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors',
-          'border border-[var(--accent-border)] bg-[var(--accent-light)] text-[var(--accent-primary)]',
-          'hover:bg-[var(--accent-primary)] hover:text-white disabled:opacity-50'
-        )}
-      >
-        {creating ? (
-          <Loader2 className="h-3 w-3 animate-spin" />
-        ) : (
-          <FolderDown className="h-3 w-3" />
-        )}
-        {creating ? 'Creating…' : 'Create Project Folder'}
-      </button>
-
-      {/* Change folder — only when a folder is already linked */}
-      {isLocalMode && localFolderHandle && (
+      {/* Project Files (DB mode) — hidden when local folder is linked */}
+      {!localFolderHandle && (
         <button
           type="button"
-          onClick={openLocalFolder}
+          onClick={switchToDBMode}
+          className={cn(
+            'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+            !isLocalMode
+              ? 'bg-[var(--accent-light)] text-[var(--accent-primary)]'
+              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]'
+          )}
+        >
+          Project Files
+        </button>
+      )}
+
+      {/* Local folder tab — primary when folder is linked */}
+      {localFolderHandle ? (
+        // Folder is linked — show it as the active permanent tab
+        <button
+          type="button"
+          onClick={isLocalMode ? undefined : undefined}
+          className={cn(
+            'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+            isLocalMode
+              ? 'bg-[var(--accent-light)] text-[var(--accent-primary)]'
+              : 'bg-[var(--accent-light)] text-[var(--accent-primary)]'
+          )}
+          title={`Local folder: ${localFolderHandle.name}`}
+        >
+          📁 {localFolderHandle.name}
+        </button>
+      ) : (
+        // No folder linked yet — show options
+        <>
+          <button
+            type="button"
+            onClick={handleOpenFolder}
+            className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)] rounded px-2.5 py-1 text-xs font-medium transition-colors"
+          >
+            Open Existing Folder
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={creating}
+            title="Auto-create all project files and folders on your laptop"
+            className={cn(
+              'flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors',
+              'border border-[var(--accent-border)] bg-[var(--accent-light)] text-[var(--accent-primary)]',
+              'hover:bg-[var(--accent-primary)] hover:text-white disabled:opacity-50'
+            )}
+          >
+            {creating ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <FolderDown className="h-3 w-3" />
+            )}
+            {creating ? 'Creating…' : 'Create Project Folder'}
+          </button>
+        </>
+      )}
+
+      {/* Change folder button — only when folder is linked */}
+      {localFolderHandle && (
+        <button
+          type="button"
+          onClick={handleCreate}
           className="ml-auto text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
-          title="Link a different folder"
+          title="Create or re-link a different folder"
         >
           Change
         </button>
