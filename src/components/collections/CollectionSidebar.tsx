@@ -88,7 +88,7 @@ function SortableCollectionItem({
       onClick={() => onSelect(collection.id)}
       role="button"
       tabIndex={0}
-      aria-selected={isSelected}
+      aria-current={isSelected ? 'true' : undefined}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()

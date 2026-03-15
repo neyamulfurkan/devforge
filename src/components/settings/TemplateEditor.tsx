@@ -67,7 +67,8 @@ export function TemplateEditor({
   useEffect(() => {
     setContent(template.content)
     setIsDirty(false)
-  }, [template.id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [template.id]) // intentionally omit template.content — we only want to reset when the template itself changes, not on every keystroke
 
   // 8c. Event handlers
   const handleContentChange = useCallback(
