@@ -88,8 +88,7 @@ export default function MonacoEditorWrapper({
   const isLocalMode = isLocalModeProp ?? false
   const { settings } = useSettings()
 
-  // Ref to the live Monaco editor instance
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  // Ref to the live Monaco editor instance — typed as unknown, cast at call site
   const editorInstanceRef = useRef<unknown>(null)
 
   // Stable ref for debounced callback to avoid stale closures
