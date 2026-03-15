@@ -11,6 +11,63 @@ import { useFiles } from '@/hooks/useFiles'
 import type { FileWithContent } from '@/types'
 import type { LocalFileNode } from '@/store/editorStore'
 
+// ─── IndexedDB helpers — persist FileSystemDirectoryHandle per project ────────
+// FileSystemDirectoryHandle is a live browser object — it cannot be stored in
+// localStorage or Zustand. IndexedDB is the only web storage that accepts it.
+
+const IDB_NAME = 'devforge-local-folders'
+const IDB_STORE = 'handles'
+const IDB_VERSION = 1
+
+function openIDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION)
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(IDB_STORE)
+    }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+async function saveHandleForProject(
+  projectId: string,
+  handle: FileSystemDirectoryHandle
+): Promise<void> {
+  const db = await openIDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite')
+    tx.objectStore(IDB_STORE).put(handle, projectId)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+async function loadHandleForProject(
+  projectId: string
+): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    const db = await openIDB()
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly')
+      const req = tx.objectStore(IDB_STORE).get(projectId)
+      req.onsuccess = () => resolve((req.result as FileSystemDirectoryHandle) ?? null)
+      req.onerror = () => reject(req.error)
+    })
+  } catch {
+    return null
+  }
+}
+
+async function clearHandleForProject(projectId: string): Promise<void> {
+  const db = await openIDB()
+  return new Promise((resolve) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite')
+    tx.objectStore(IDB_STORE).delete(projectId)
+    tx.oncomplete = () => resolve()
+  })
+}
+
 // ─── Local helper — walk a FileSystemDirectoryHandle recursively ─────────────
 async function walkDirectory(
   dirHandle: FileSystemDirectoryHandle,
@@ -160,6 +217,9 @@ export function useEditor(projectId: string) {
         window as Window & { showDirectoryPicker: () => Promise<FileSystemDirectoryHandle> }
       ).showDirectoryPicker()
 
+      // Persist handle to IndexedDB so it survives page reloads
+      await saveHandleForProject(projectId, dirHandle)
+
       setLocalFolderHandle(dirHandle)
       switchToLocalMode()
 
@@ -171,7 +231,57 @@ export function useEditor(projectId: string) {
         console.error('openLocalFolder error:', err)
       }
     }
-  }, [setLocalFolderHandle, setLocalFileTree, switchToLocalMode])
+  }, [projectId, setLocalFolderHandle, setLocalFileTree, switchToLocalMode])
+
+  // ── Local-mode: restore saved folder on mount ─────────────────────────────
+  // Runs once when the editor tab mounts for this projectId.
+  // Silently restores the previously chosen folder — if the browser still has
+  // permission, the tree loads with no user interaction at all.
+  // If permission was revoked, queryPermission returns 'prompt' and we call
+  // requestPermission() which shows a one-click browser prompt (no picker).
+
+  const restoreLocalFolder = useCallback(async () => {
+    if (typeof window === 'undefined' || !('showDirectoryPicker' in window)) return
+
+    const savedHandle = await loadHandleForProject(projectId)
+    if (!savedHandle) return
+
+    try {
+      // Check current permission state
+      const permission = await (
+        savedHandle as FileSystemDirectoryHandle & {
+          queryPermission: (desc: { mode: string }) => Promise<PermissionState>
+          requestPermission: (desc: { mode: string }) => Promise<PermissionState>
+        }
+      ).queryPermission({ mode: 'readwrite' })
+
+      let finalPermission = permission
+
+      if (permission === 'prompt') {
+        // Ask for permission with a simple browser prompt — no folder picker
+        finalPermission = await (
+          savedHandle as FileSystemDirectoryHandle & {
+            requestPermission: (desc: { mode: string }) => Promise<PermissionState>
+          }
+        ).requestPermission({ mode: 'readwrite' })
+      }
+
+      if (finalPermission !== 'granted') {
+        // Permission denied — clear the stale handle
+        await clearHandleForProject(projectId)
+        return
+      }
+
+      // Permission granted — restore the tree silently
+      setLocalFolderHandle(savedHandle)
+      switchToLocalMode()
+      const tree = await walkDirectory(savedHandle)
+      setLocalFileTree(tree)
+    } catch {
+      // Handle may be stale (folder deleted/moved) — clear it
+      await clearHandleForProject(projectId)
+    }
+  }, [projectId, setLocalFolderHandle, setLocalFileTree, switchToLocalMode])
 
   // ── Local-mode: open a specific file from the tree ───────────────────────
 
@@ -227,6 +337,17 @@ export function useEditor(projectId: string) {
     },
     [setContent, markDirty]
   )
+
+  // ── Restore saved folder on mount ────────────────────────────────────────
+  // Only runs once per projectId. If already in local mode (store already has
+  // a handle from this session), skip to avoid redundant re-walks.
+
+  useEffect(() => {
+    if (!isLocalMode) {
+      restoreLocalFolder()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]) // projectId change = different project = re-check its saved folder
 
   // ── Auto-save on dirty ────────────────────────────────────────────────────
 
@@ -284,7 +405,10 @@ export function useEditor(projectId: string) {
     save,
     toggleReadOnly,
     closeFile,
-    switchToDBMode,
+    switchToDBMode: async () => {
+      await clearHandleForProject(projectId)
+      switchToDBMode()
+    },
     onContentChange: handleContentChange,
   }
 }
