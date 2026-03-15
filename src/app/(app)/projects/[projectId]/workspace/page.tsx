@@ -126,7 +126,8 @@ function EditorLoadingSkeleton(): JSX.Element {
 function NextFileBar({ projectId }: { projectId: string }): JSX.Element | null {
   const { files } = useFiles(projectId)
   const { document: docData } = useDocument(projectId)
-  const { openFile } = useEditor(projectId)
+  const { openFile, openLocalFile, isLocalMode } = useEditor(projectId)
+  const { getLocalState } = useEditorStore()
   const [copyState, setCopyState] = React.useState<'idle' | 'loading' | 'done'>('idle')
 
   // Find the next file to work on: first EMPTY, then CODE_PASTED, ordered by fileNumber
@@ -152,8 +153,38 @@ function NextFileBar({ projectId }: { projectId: string }): JSX.Element | null {
     setCopyState('loading')
 
     try {
-      // 1 — open the file in the editor
-      await openFile(nextFile.id)
+      // 1 — open the file in the editor (local mode vs DB mode)
+      if (isLocalMode) {
+        // In local mode: find the matching local file handle by filePath
+        const { localFileTree } = getLocalState(projectId)
+        const findNode = (
+          nodes: import('@/store/editorStore').LocalFileNode[],
+          targetPath: string
+        ): import('@/store/editorStore').LocalFileNode | null => {
+          for (const node of nodes) {
+            if (node.type === 'file') {
+              const nodePath = node.path.replace(/^\/+/, '')
+              const target = targetPath.replace(/^\/+/, '')
+              if (
+                nodePath === target ||
+                nodePath.endsWith('/' + target) ||
+                target.endsWith('/' + nodePath)
+              ) return node
+            }
+            if (node.type === 'folder' && node.children) {
+              const found = findNode(node.children, targetPath)
+              if (found) return found
+            }
+          }
+          return null
+        }
+        const node = findNode(localFileTree, nextFile.filePath)
+        if (node && node.type === 'file') {
+          await openLocalFile(node.handle as FileSystemFileHandle, node.path)
+        }
+      } else {
+        await openFile(nextFile.id)
+      }
 
       // 2 — build the prompt to copy
       const gcd = docData?.rawContent ?? ''
@@ -197,7 +228,7 @@ function NextFileBar({ projectId }: { projectId: string }): JSX.Element | null {
     } catch {
       setCopyState('idle')
     }
-  }, [nextFile, copyState, openFile, docData, files, projectId])
+  }, [nextFile, copyState, openFile, openLocalFile, isLocalMode, getLocalState, docData, files, projectId])
 
   if (!nextFile) {
     // All files complete

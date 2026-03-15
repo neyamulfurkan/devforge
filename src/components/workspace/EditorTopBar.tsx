@@ -222,8 +222,8 @@ export function EditorTopBar({ file, onMarkComplete, projectId, onFindReplace, o
         {/* Divider */}
         <div className="h-4 w-px bg-[var(--border-subtle)]" aria-hidden="true" />
 
-        {/* JSON Registry button — DB mode only */}
-        {!isLocalMode && file && (
+        {/* JSON Registry button — always shown when file has DB id */}
+        {file && (
           <button
             type="button"
             onClick={() => setJsonPanelOpen((v) => !v)}
@@ -274,8 +274,8 @@ export function EditorTopBar({ file, onMarkComplete, projectId, onFindReplace, o
       </div>
     </div>
 
-    {/* ── JSON Registry Panel — slides open below top bar ─────────────── */}
-    {jsonPanelOpen && !isLocalMode && file && (
+    {/* ── JSON Registry Panel — always available when file exists ─────── */}
+    {jsonPanelOpen && file && (
       <div className="border-b border-[var(--border-default)] bg-[var(--bg-primary)] px-4 py-3 space-y-2">
           {/* Header row */}
           <div className="flex items-center justify-between">
@@ -326,6 +326,8 @@ export function EditorTopBar({ file, onMarkComplete, projectId, onFindReplace, o
                     try {
                       const parsed = JSON.parse(trimmed)
                       await appendJsonSummary(file.id, parsed)
+                      // Auto-mark file as complete when JSON is appended
+                      await onMarkComplete()
                       await queryClient.refetchQueries({ queryKey: ['document', projectId] })
                       await queryClient.refetchQueries({ queryKey: ['files', projectId] })
                       setJsonState('done')
