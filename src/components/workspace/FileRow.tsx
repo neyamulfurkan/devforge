@@ -136,9 +136,18 @@ function RequiredFileChip({ dep }: { dep: string }): JSX.Element {
   )
 }
 
-// ─── GCD + Prompt + Code button ──────────────────────────────────────────────
-// Reads required files from local disk first, falls back to cloud/DB.
-// Assembles GCD + FSP + all required file contents into one clipboard paste.
+// ─── GCD + FSP + Code button ──────────────────────────────────────────────────
+// Copies GCD + file-specific prompt + all required files' actual code.
+//
+// Code source priority per required file:
+//   1. Currently open file in editor store (already in memory — instant)
+//   2. Local disk — walks localFileTree, matches by filename suffix
+//      since tree paths may have a root prefix (e.g. "devforge/src/lib/utils.ts"
+//      vs required path "src/lib/utils.ts")
+//   3. All project files from DB — fetches file list once, matches by filePath,
+//      then fetches code for each matched file
+//
+// Always colorful (indigo/purple gradient) so it stands out from GCD+ button.
 
 function GcdPlusCodeButton({
   gcdContent,
@@ -158,16 +167,40 @@ function GcdPlusCodeButton({
   compact?: boolean
 }): JSX.Element {
   const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
-  const { isLocalMode } = useEditor(projectId)
+  const [fetchedCount, setFetchedCount] = useState(0)
+
+  const { isLocalMode, fileContent: openFileContent, openLocalPath } = useEditor(projectId)
   const { localFileTree } = useEditorStore()
 
-  // Recursively find a file node in the local tree by path
-  const findLocalNode = useCallback(
-    (nodes: LocalFileNode[], targetPath: string): LocalFileNode | null => {
+  // ── Strip "FILE NNN: " prefix and normalise path ──────────────────────────
+  const cleanPath = (raw: string): string =>
+    raw.replace(/^FILE\s+[\w]+:\s*/i, '').trim()
+
+  // ── Walk local tree, match by path suffix ─────────────────────────────────
+  // localFileTree paths may be "devforge/src/lib/utils.ts" but required path
+  // is "src/lib/utils.ts" — match if tree node path ENDS WITH the required path
+  const findInLocalTree = useCallback(
+    async (
+      nodes: LocalFileNode[],
+      requiredPath: string
+    ): Promise<string | null> => {
       for (const node of nodes) {
-        if (node.type === 'file' && node.path === targetPath) return node
+        if (
+          node.type === 'file' &&
+          (node.path === requiredPath ||
+            node.path.endsWith('/' + requiredPath) ||
+            node.path.endsWith(requiredPath))
+        ) {
+          try {
+            const f = await (node.handle as FileSystemFileHandle).getFile()
+            const text = await f.text()
+            if (text.trim()) return text
+          } catch {
+            // continue searching
+          }
+        }
         if (node.type === 'folder' && node.children) {
-          const found = findLocalNode(node.children, targetPath)
+          const found = await findInLocalTree(node.children, requiredPath)
           if (found) return found
         }
       }
@@ -176,105 +209,123 @@ function GcdPlusCodeButton({
     []
   )
 
-  // Fetch content for a single required file path.
-  // Priority: local disk → Cloudinary/DB API
-  const fetchRequiredFileContent = useCallback(
-    async (rawDep: string): Promise<{ path: string; content: string } | null> => {
-      // Strip "FILE NNN: " prefix if present
-      const path = rawDep.replace(/^FILE\s+[\w]+:\s*/i, '').trim()
-      if (!path) return null
-
-      // 1 — Try local disk first (fastest, zero network)
-      if (isLocalMode && localFileTree.length > 0) {
-        const node = findLocalNode(localFileTree, path)
-        if (node && node.type === 'file') {
-          try {
-            const f = await (node.handle as FileSystemFileHandle).getFile()
-            const text = await f.text()
-            if (text.trim()) return { path, content: text }
-          } catch {
-            // Fall through to API
-          }
-        }
-      }
-
-      // 2 — Fall back to Cloudinary/DB via API
-      // We need the fileId — fetch the file list metadata
-      try {
-        const listRes = await fetch(`/api/projects/${projectId}/files?path=${encodeURIComponent(path)}`)
-        if (listRes.ok) {
-          const listJson = await listRes.json()
-          const fileId: string | undefined =
-            Array.isArray(listJson.data)
-              ? listJson.data.find(
-                  (f: { filePath: string; id: string }) => f.filePath === path
-                )?.id
-              : undefined
-
-          if (fileId) {
-            const codeRes = await fetch(`/api/projects/${projectId}/files/${fileId}/code`)
-            if (codeRes.ok) {
-              const codeJson = await codeRes.json()
-              const content: string = codeJson.data?.codeContent ?? ''
-              if (content.trim()) return { path, content }
-            }
-          }
-        }
-      } catch {
-        // Non-fatal — file just won't be included
-      }
-
-      return null
-    },
-    [isLocalMode, localFileTree, projectId, findLocalNode]
-  )
-
   const handleClick = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation()
       if (state === 'loading') return
       setState('loading')
+      setFetchedCount(0)
 
       try {
         const sep = '═'.repeat(60)
         const thinSep = '─'.repeat(60)
 
-        // Fetch all required file contents in parallel
-        const fetchedFiles = await Promise.all(
-          requiredFiles.map((dep) => fetchRequiredFileContent(dep))
-        )
-        const availableFiles = fetchedFiles.filter(
-          (f): f is { path: string; content: string } => f !== null
-        )
-        const missingPaths = requiredFiles
-          .map((dep) => dep.replace(/^FILE\s+[\w]+:\s*/i, '').trim())
-          .filter((p) => !availableFiles.find((f) => f.path === p))
+        // ── Fetch all project file metadata once (for DB fallback) ──────────
+        let allProjectFiles: Array<{ id: string; filePath: string }> = []
+        try {
+          const listRes = await fetch(`/api/projects/${projectId}/files`)
+          if (listRes.ok) {
+            const listJson = await listRes.json()
+            allProjectFiles = Array.isArray(listJson.data) ? listJson.data : []
+          }
+        } catch {
+          // DB fallback won't work but local disk still will
+        }
 
-        // Build required files section
-        const requiredFilesBlock =
-          availableFiles.length > 0
-            ? availableFiles
-                .map(
-                  (f) =>
-                    `// FILE: ${f.path}\n${thinSep}\n${f.content}`
+        // ── Fetch each required file ─────────────────────────────────────────
+        const results: Array<{ path: string; content: string; source: string }> = []
+        const missing: string[] = []
+
+        for (const rawDep of requiredFiles) {
+          const reqPath = cleanPath(rawDep)
+          if (!reqPath) continue
+
+          let content: string | null = null
+          let source = ''
+
+          // Source 1 — currently open file in editor (already in memory)
+          if (
+            openLocalPath &&
+            (openLocalPath === reqPath ||
+              openLocalPath.endsWith('/' + reqPath) ||
+              openLocalPath.endsWith(reqPath)) &&
+            openFileContent?.trim()
+          ) {
+            content = openFileContent
+            source = 'editor'
+          }
+
+          // Source 2 — local disk tree
+          if (!content && isLocalMode && localFileTree.length > 0) {
+            const diskContent = await findInLocalTree(localFileTree, reqPath)
+            if (diskContent) {
+              content = diskContent
+              source = 'disk'
+            }
+          }
+
+          // Source 3 — DB / Cloudinary via API
+          if (!content) {
+            const match = allProjectFiles.find(
+              (f) =>
+                f.filePath === reqPath ||
+                f.filePath.endsWith('/' + reqPath)
+            )
+            if (match) {
+              try {
+                const codeRes = await fetch(
+                  `/api/projects/${projectId}/files/${match.id}/code`
                 )
-                .join('\n\n')
-            : ''
+                if (codeRes.ok) {
+                  const codeJson = await codeRes.json()
+                  const fetched: string = codeJson.data?.codeContent ?? ''
+                  if (fetched.trim()) {
+                    content = fetched
+                    source = 'cloud'
+                  }
+                }
+              } catch {
+                // Non-fatal
+              }
+            }
+          }
+
+          if (content) {
+            results.push({ path: reqPath, content, source })
+            setFetchedCount((n) => n + 1)
+          } else {
+            missing.push(reqPath)
+          }
+        }
+
+        // ── Assemble the clipboard payload ───────────────────────────────────
+        const requiredFilesBlock = results
+          .map(
+            (r) =>
+              `// ─── ${r.path} ${'─'.repeat(Math.max(0, 55 - r.path.length))}\n${r.content}`
+          )
+          .join('\n\n')
 
         const missingNote =
-          missingPaths.length > 0
-            ? `\nNOTE — The following required files could not be found on disk or cloud:\n${missingPaths.map((p) => `  - ${p}`).join('\n')}\nPlease share them manually if Claude needs them.\n`
+          missing.length > 0
+            ? `\n⚠️ Could not find code for:\n${missing.map((p) => `  • ${p}`).join('\n')}\nPlease paste these files manually.\n`
             : ''
 
         const requiredSection =
-          availableFiles.length > 0 || missingPaths.length > 0
+          results.length > 0
             ? `${sep}
-REQUIRED REFERENCE FILES — READ THESE BEFORE WRITING ANY CODE
+REQUIRED REFERENCE FILES (${results.length} file${results.length !== 1 ? 's' : ''}) — READ ALL BEFORE WRITING ANY CODE
 ${sep}
 
-These files are provided for context. Study their exports, types, and patterns before generating FILE ${fileNumber}.
+Study every file below. Match their exports, types, naming conventions, and patterns exactly.
 
-${requiredFilesBlock}${missingNote}`
+${requiredFilesBlock}
+${missingNote}`
+            : missing.length > 0
+            ? `${sep}
+REQUIRED REFERENCE FILES — NOT FOUND
+${sep}
+${missingNote}`
             : ''
 
         const combined = `${gcdContent}
@@ -291,31 +342,38 @@ ${sep}
 OUTPUT FORMAT — YOU MUST FOLLOW THIS EXACTLY:
 ${sep}
 
-1. Output the COMPLETE file implementation — every function, every handler, every import fully written. No placeholders, no "// TODO", no truncation.
+Your entire response must contain ONLY two things in this exact order:
 
-2. Immediately after the code block, output this JSON — no commentary before or after it, it must be the last thing in your response:
+1. The complete file code in a single fenced code block. Every function, every handler, every import fully written. No placeholders, no "// TODO", no truncation.
+
+2. Immediately after the closing fence of the code block — this JSON object with no text before or after it:
 
 \`\`\`json
 {
   "file": "${filePath}",
   "fileNumber": "${fileNumber}",
-  "exports": ["Name — 3 words max description"],
-  "imports": ["package — reason, skip React/Next/built-ins"],
-  "keyLogic": "Max 1 sentence. Core behaviour only.",
-  "sideEffects": ["one short phrase — omit if none"],
-  "dependents": ["top 3 direct importers only"],
+  "exports": ["ExportName — max 3 word description"],
+  "imports": ["package — one reason, omit React/Next/Node built-ins"],
+  "keyLogic": "One sentence. What this file actually does.",
+  "sideEffects": ["one short phrase — omit array if none"],
+  "dependents": ["top 3 files that import this one"],
   "status": "complete",
   "generatedAt": "${new Date().toISOString()}"
 }
 \`\`\`
 
-DO NOT add anything after the JSON block. No explanations, no summaries, no "I've implemented..." commentary.
+STRICT RULES:
+- Do NOT repeat, quote, or reference the GCD or Section 9
+- Do NOT add any text after the JSON closing fence
+- Do NOT add introductory text before the code block
+- Do NOT add "I've implemented..." commentary anywhere
+- JSON must be the absolute last thing in your response
 
 ${requiredSection}`
 
         await navigator.clipboard.writeText(combined)
         setState('done')
-        setTimeout(() => setState('idle'), 2000)
+        setTimeout(() => setState('idle'), 2500)
       } catch {
         setState('error')
         setTimeout(() => setState('idle'), 2000)
@@ -328,17 +386,26 @@ ${requiredSection}`
       filePath,
       fileNumber,
       requiredFiles,
-      fetchRequiredFileContent,
+      projectId,
+      isLocalMode,
+      localFileTree,
+      openFileContent,
+      openLocalPath,
+      findInLocalTree,
     ]
   )
 
-  const base = `
-    inline-flex items-center gap-1.5 border transition-all duration-150 select-none font-medium
+  // ── Always colorful — gradient indigo/purple so it stands out ────────────
+  const baseStyle = `
+    inline-flex items-center gap-1.5 transition-all duration-150
+    select-none font-medium rounded-md whitespace-nowrap
     ${state === 'done'
-      ? 'border-[var(--status-complete)]/40 bg-[var(--status-complete-bg)] text-[var(--status-complete)]'
+      ? 'bg-[var(--status-complete-bg)] border border-[var(--status-complete)]/40 text-[var(--status-complete)]'
       : state === 'error'
-      ? 'border-[var(--status-error)]/40 bg-[var(--status-error-bg)] text-[var(--status-error)]'
-      : 'border-[var(--accent-border)] bg-[var(--accent-light)] text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-white'
+      ? 'bg-[var(--status-error-bg)] border border-[var(--status-error)]/40 text-[var(--status-error)]'
+      : state === 'loading'
+      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 border border-transparent text-white opacity-80'
+      : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 border border-transparent text-white shadow-sm hover:shadow-md active:scale-95'
     }
   `
 
@@ -347,32 +414,27 @@ ${requiredSection}`
     state === 'done'    ? <Check className="h-3 w-3" /> :
                           <Copy className="h-3 w-3" />
 
-  const label =
-    state === 'loading' ? 'Reading…' :
-    state === 'done'    ? 'Copied!' :
-    state === 'error'   ? 'Error' :
-    compact             ? 'GCD+Code' : 'Copy GCD + FSP + Code'
+  const labelText =
+    state === 'loading'
+      ? `Reading ${fetchedCount}/${requiredFiles.length}…`
+      : state === 'done'
+      ? `Copied! (${fetchedCount} files)`
+      : state === 'error'
+      ? 'Error — retry'
+      : compact
+      ? 'GCD+Code'
+      : 'Copy GCD + FSP + Code'
 
-  return compact ? (
+  return (
     <button
       type="button"
       onClick={handleClick}
       disabled={state === 'loading'}
-      title="Copy GCD + file prompt + all required file codes from disk"
-      className={`${base} h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap`}
+      title="Copy GCD + file-specific prompt + all required file codes (reads from local disk first)"
+      className={`${baseStyle} ${compact ? 'h-7 px-2.5 text-[11px]' : 'h-7 px-3 text-xs'}`}
     >
       {icon}
-      {label}
-    </button>
-  ) : (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={state === 'loading'}
-      className={`${base} h-7 px-3 rounded-md text-xs`}
-    >
-      {icon}
-      {label}
+      {labelText}
     </button>
   )
 }
