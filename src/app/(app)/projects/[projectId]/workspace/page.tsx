@@ -16,7 +16,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 
 // 4b. Additional icon imports for EditorLayout
-import { FolderOpen, FolderDown, Loader2, CheckCircle2, ChevronRight, Sparkles, Copy, Check } from 'lucide-react'
+import { FolderOpen, FolderDown, Loader2, CheckCircle2, ChevronRight, Sparkles, Check } from 'lucide-react'
 
 // 5. Internal imports — workspace components
 import { WorkspaceNav } from '@/components/workspace/WorkspaceNav'
@@ -126,8 +126,7 @@ function EditorLoadingSkeleton(): JSX.Element {
 function NextFileBar({ projectId }: { projectId: string }): JSX.Element | null {
   const { files } = useFiles(projectId)
   const { document: docData } = useDocument(projectId)
-  const { openFile, openLocalFile, isLocalMode } = useEditor(projectId)
-  const { getLocalState } = useEditorStore()
+  const { openFile } = useEditor(projectId)
   const [copyState, setCopyState] = React.useState<'idle' | 'loading' | 'done'>('idle')
 
   // Find the next file to work on: first EMPTY, then CODE_PASTED, ordered by fileNumber
@@ -153,38 +152,9 @@ function NextFileBar({ projectId }: { projectId: string }): JSX.Element | null {
     setCopyState('loading')
 
     try {
-      // 1 — open the file in the editor (local mode vs DB mode)
-      if (isLocalMode) {
-        // In local mode: find the matching local file handle by filePath
-        const { localFileTree } = getLocalState(projectId)
-        const findNode = (
-          nodes: import('@/store/editorStore').LocalFileNode[],
-          targetPath: string
-        ): import('@/store/editorStore').LocalFileNode | null => {
-          for (const node of nodes) {
-            if (node.type === 'file') {
-              const nodePath = node.path.replace(/^\/+/, '')
-              const target = targetPath.replace(/^\/+/, '')
-              if (
-                nodePath === target ||
-                nodePath.endsWith('/' + target) ||
-                target.endsWith('/' + nodePath)
-              ) return node
-            }
-            if (node.type === 'folder' && node.children) {
-              const found = findNode(node.children, targetPath)
-              if (found) return found
-            }
-          }
-          return null
-        }
-        const node = findNode(localFileTree, nextFile.filePath)
-        if (node && node.type === 'file') {
-          await openLocalFile(node.handle as FileSystemFileHandle, node.path)
-        }
-      } else {
-        await openFile(nextFile.id)
-      }
+      // 1 — always open via DB mode so openFileId is set correctly in the store
+      // This ensures EditorLayout picks up the file regardless of local/DB mode
+      await openFile(nextFile.id)
 
       // 2 — build the prompt to copy
       const gcd = docData?.rawContent ?? ''
@@ -228,7 +198,7 @@ function NextFileBar({ projectId }: { projectId: string }): JSX.Element | null {
     } catch {
       setCopyState('idle')
     }
-  }, [nextFile, copyState, openFile, openLocalFile, isLocalMode, getLocalState, docData, files, projectId])
+  }, [nextFile, copyState, openFile, docData, files, projectId])
 
   if (!nextFile) {
     // All files complete
@@ -660,9 +630,8 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
     saveFile,
     isLocalMode,
     openLocalPath,
-    openLocalFolder,
   } = useEditor(projectId)
-  const { project } = useProject(projectId)
+  const { files } = useFiles(projectId)
   const { getLocalState } = useEditorStore()
   const { localFolderHandle } = getLocalState(projectId)
 
@@ -678,10 +647,8 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
     []
   )
 
-  // Derive the currently open DB file from project files
-  const openFile =
-    (project as (typeof project & { files?: { id: string; [key: string]: unknown }[] }) | null)
-      ?.files?.find((f) => f.id === openFileId) ?? null
+  // Derive the currently open DB file from useFiles (has full data including jsonSummary)
+  const openFile = files.find((f) => f.id === openFileId) ?? null
 
   const handleContentChange = useCallback(
     (content: string) => {
@@ -698,8 +665,13 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
     }
   }, [openFileId, saveFile])
 
+  // ── When openFileId is set (from NextFileBar), temporarily show DB file ──
+  // If user explicitly opened a DB file via NextFileBar while in local mode,
+  // show the DB editor view for that file so they can paste code and append JSON
+  const showingDBFile = !isLocalMode || (!!openFileId && !isLocalMode)
+
   // ── Local folder not yet assigned — show assign prompt ───────────────────
-  if (isLocalMode && !localFolderHandle) {
+  if (isLocalMode && !localFolderHandle && !openFileId) {
     return <FolderSetupScreen projectId={projectId} />
   }
 

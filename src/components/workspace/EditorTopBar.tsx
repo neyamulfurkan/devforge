@@ -222,8 +222,8 @@ export function EditorTopBar({ file, onMarkComplete, projectId, onFindReplace, o
         {/* Divider */}
         <div className="h-4 w-px bg-[var(--border-subtle)]" aria-hidden="true" />
 
-        {/* JSON Registry button — always shown when file has DB id */}
-        {file && (
+        {/* JSON Registry button — always shown when DB file is open */}
+        {file && file.id && (
           <button
             type="button"
             onClick={() => setJsonPanelOpen((v) => !v)}
@@ -274,8 +274,8 @@ export function EditorTopBar({ file, onMarkComplete, projectId, onFindReplace, o
       </div>
     </div>
 
-    {/* ── JSON Registry Panel — always available when file exists ─────── */}
-    {jsonPanelOpen && file && (
+    {/* ── JSON Registry Panel — always available when file has DB id ──── */}
+    {jsonPanelOpen && file && file.id && (
       <div className="border-b border-[var(--border-default)] bg-[var(--bg-primary)] px-4 py-3 space-y-2">
           {/* Header row */}
           <div className="flex items-center justify-between">
