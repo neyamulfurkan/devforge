@@ -324,25 +324,29 @@ export function EditorFileTree({ projectId }: EditorFileTreeProps): JSX.Element 
   const handleFileClick = useCallback(
     (fileId: string) => {
       if (isLocalMode) {
-        // In local mode, fileId is the file path — find the handle in localFileTree
-        const findHandle = (
+        // In local mode fileId === node.path (we set id: node.path in the shell)
+        // Walk the LIVE localFileTree from the store to get the actual handle —
+        // never rely on the shell object's handle which may be a stale reference
+        const findNode = (
           nodes: LocalFileNode[],
           targetPath: string
-        ): FileSystemFileHandle | null => {
+        ): LocalFileNode | null => {
           for (const node of nodes) {
             if (node.type === 'file' && node.path === targetPath) {
-              return node.handle as FileSystemFileHandle
+              return node
             }
             if (node.type === 'folder' && node.children) {
-              const found = findHandle(node.children, targetPath)
+              const found = findNode(node.children, targetPath)
               if (found) return found
             }
           }
           return null
         }
-        const handle = findHandle(localFileTree, fileId)
-        if (handle) {
-          openLocalFile(handle, fileId)
+
+        const node = findNode(localFileTree, fileId)
+        if (node && node.type === 'file') {
+          // Cast is safe — we just confirmed type === 'file'
+          openLocalFile(node.handle as FileSystemFileHandle, node.path)
         }
       } else {
         openFile(fileId)

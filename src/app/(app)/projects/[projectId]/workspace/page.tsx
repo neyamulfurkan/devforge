@@ -121,11 +121,19 @@ function EditorLoadingSkeleton(): JSX.Element {
 // Sits above the editor. Lets user toggle between DB files and local folder.
 
 function EditorModeSwitcher({ projectId }: { projectId: string }): JSX.Element {
-  const { isLocalMode, openLocalFolder, switchToDBMode } = useEditor(projectId)
+  const { isLocalMode, openLocalFolder, switchToDBMode, createProjectFolder } = useEditor(projectId)
   const { localFolderHandle } = useEditorStore()
+  const [creating, setCreating] = React.useState(false)
+
+  const handleCreate = React.useCallback(async () => {
+    setCreating(true)
+    await createProjectFolder()
+    setCreating(false)
+  }, [createProjectFolder])
 
   return (
     <div className="flex h-9 flex-shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3">
+      {/* Project Files (DB mode) */}
       <button
         type="button"
         onClick={switchToDBMode}
@@ -138,26 +146,50 @@ function EditorModeSwitcher({ projectId }: { projectId: string }): JSX.Element {
       >
         Project Files
       </button>
+
+      {/* Local folder — shows folder name when linked */}
       <button
         type="button"
         onClick={isLocalMode && localFolderHandle ? undefined : openLocalFolder}
         className={cn(
           'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-          isLocalMode
+          isLocalMode && localFolderHandle
             ? 'bg-[var(--accent-light)] text-[var(--accent-primary)]'
             : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]'
         )}
       >
         {isLocalMode && localFolderHandle
           ? `📁 ${localFolderHandle.name}`
-          : 'Open Local Folder'}
+          : 'Open Existing Folder'}
       </button>
+
+      {/* Create project folder — always visible, most important action */}
+      <button
+        type="button"
+        onClick={handleCreate}
+        disabled={creating}
+        title="Auto-create all project files and folders on your laptop"
+        className={cn(
+          'flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors',
+          'border border-[var(--accent-border)] bg-[var(--accent-light)] text-[var(--accent-primary)]',
+          'hover:bg-[var(--accent-primary)] hover:text-white disabled:opacity-50'
+        )}
+      >
+        {creating ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <FolderDown className="h-3 w-3" />
+        )}
+        {creating ? 'Creating…' : 'Create Project Folder'}
+      </button>
+
+      {/* Change folder — only when a folder is already linked */}
       {isLocalMode && localFolderHandle && (
         <button
           type="button"
           onClick={openLocalFolder}
           className="ml-auto text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
-          title="Change folder"
+          title="Link a different folder"
         >
           Change
         </button>
