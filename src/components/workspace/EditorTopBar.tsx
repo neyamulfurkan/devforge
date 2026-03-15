@@ -4,7 +4,7 @@
 import { useState, useCallback } from 'react'
 
 // 2. Third-party imports
-import { Lock, Unlock, CheckSquare, FileCode } from 'lucide-react'
+import { Lock, Unlock, CheckSquare, FileCode, Replace } from 'lucide-react'
 
 // 3. Internal imports — UI components
 import { Button } from '@/components/ui/button'
@@ -15,7 +15,7 @@ import { CopyButton } from '@/components/shared/CopyButton'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 
 // 5. Internal imports — hooks and utils
-import { useEditorStore } from '@/store/editorStore'
+import { useEditorStore, getProjectLocalState } from '@/store/editorStore'
 import { formatRelativeTime, cn } from '@/lib/utils'
 
 // 6. Internal imports — types
@@ -25,10 +25,14 @@ import type { FileWithContent } from '@/types'
 interface EditorTopBarProps {
   file: FileWithContent | null
   onMarkComplete: () => void
+  projectId: string
+  onFindReplace?: () => void
+  onFind?: () => void
 }
 
-export function EditorTopBar({ file, onMarkComplete }: EditorTopBarProps): JSX.Element {
-  const { isReadOnly, toggleReadOnly, fileContent, isLocalMode, openLocalPath } = useEditorStore()
+export function EditorTopBar({ file, onMarkComplete, projectId, onFindReplace, onFind }: EditorTopBarProps): JSX.Element {
+  const { isReadOnly, toggleReadOnly, fileContent } = useEditorStore()
+  const { isLocalMode, openLocalPath } = getProjectLocalState(projectId)
   const [isMarkingComplete, setIsMarkingComplete] = useState(false)
 
   const handleMarkComplete = useCallback(async () => {
@@ -80,7 +84,7 @@ export function EditorTopBar({ file, onMarkComplete }: EditorTopBarProps): JSX.E
     >
       {/* Left: File path breadcrumb */}
       <div className="flex min-w-0 flex-1 items-center gap-1 font-mono text-sm">
-        {breadcrumbSegments.map((segment, index) => {
+        {breadcrumbSegments.map((segment: string, index: number) => {
           const isLast = index === breadcrumbSegments.length - 1
           return (
             <span key={index} className="flex items-center gap-1 min-w-0">
@@ -120,6 +124,41 @@ export function EditorTopBar({ file, onMarkComplete }: EditorTopBarProps): JSX.E
 
       {/* Right: Actions */}
       <div className="flex flex-shrink-0 items-center gap-2">
+        {/* Find — always shown when handler provided */}
+        {onFind && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onFind}
+            className="h-7 gap-1.5 px-2 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+            aria-label="Find in file (Ctrl+F)"
+            title="Find (Ctrl+F)"
+          >
+            <FileCode className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Find</span>
+          </Button>
+        )}
+
+        {/* Find & Replace — always shown when handler provided */}
+        {onFindReplace && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onFindReplace}
+            className="h-7 gap-1.5 px-2 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+            aria-label="Find and replace (Ctrl+H)"
+            title="Find & Replace (Ctrl+H)"
+          >
+            <Replace className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Replace</span>
+          </Button>
+        )}
+
+        {/* Divider — only when find/replace buttons present */}
+        {(onFind || onFindReplace) && (
+          <div className="h-4 w-px bg-[var(--border-subtle)]" aria-hidden="true" />
+        )}
+
         {/* Copy all file content — always shown */}
         <CopyButton
           value={fileContent}

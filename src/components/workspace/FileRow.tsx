@@ -373,12 +373,18 @@ function GcdPlusCodeButton({
         const thinSep = '─'.repeat(60)
 
         // ── Read store state at click time — never stale ─────────────────────
-        const {
-          localFileTree: liveTree,
-          fileContent: liveContent,
-          openLocalPath: livePath,
-          isLocalMode: liveLocalMode,
-        } = useEditorStore.getState()
+       const storeState = useEditorStore.getState()
+const liveContent = storeState.fileContent
+const projectLocalState = storeState.localModeByProject[projectId] ?? {
+isLocalMode: false,
+localFileTree: [],
+openLocalPath: null,
+openLocalHandle: null,
+localFolderHandle: null,
+}
+const liveTree = projectLocalState.localFileTree
+const livePath = projectLocalState.openLocalPath
+const liveLocalMode = projectLocalState.isLocalMode
 
         // ── Fetch all project file metadata once (for DB fallback) ──────────
         let allProjectFiles: Array<{

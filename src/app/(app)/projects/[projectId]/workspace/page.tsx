@@ -122,7 +122,8 @@ function EditorLoadingSkeleton(): JSX.Element {
 
 function EditorModeSwitcher({ projectId }: { projectId: string }): JSX.Element {
   const { isLocalMode, openLocalFolder, switchToDBMode, createProjectFolder } = useEditor(projectId)
-  const { localFolderHandle } = useEditorStore()
+  const { getLocalState } = useEditorStore()
+  const { localFolderHandle } = getLocalState(projectId)
   const [creating, setCreating] = React.useState(false)
   const [mismatchInfo, setMismatchInfo] = React.useState<{
     matchPct: number
@@ -467,10 +468,24 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
     onContentChange,
     saveFile,
     isLocalMode,
+    openLocalPath,
     openLocalFolder,
   } = useEditor(projectId)
   const { project } = useProject(projectId)
-  const { localFolderHandle } = useEditorStore()
+  const { getLocalState } = useEditorStore()
+  const { localFolderHandle } = getLocalState(projectId)
+
+  // Editor action refs — populated by MonacoEditorWrapper on mount
+  const findReplaceRef = React.useRef<(() => void) | null>(null)
+  const findRef = React.useRef<(() => void) | null>(null)
+
+  const handleEditorMount = useCallback(
+    (api: { runFindReplace: () => void; runFind: () => void }) => {
+      findReplaceRef.current = api.runFindReplace
+      findRef.current = api.runFind
+    },
+    []
+  )
 
   // Derive the currently open DB file from project files
   const openFile =
@@ -510,6 +525,9 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
         <EditorTopBar
           file={openFile as Parameters<typeof EditorTopBar>[0]['file']}
           onMarkComplete={handleMarkComplete}
+          projectId={projectId}
+          onFind={() => findRef.current?.()}
+          onFindReplace={() => findReplaceRef.current?.()}
         />
 
         {/* Monaco editor fills remaining height */}
@@ -518,6 +536,8 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
             file={openFile as FileWithContent | null}
             onContentChange={handleContentChange}
             isLocalMode={isLocalMode}
+            openLocalPath={openLocalPath}
+            onEditorMount={handleEditorMount}
           />
         </div>
       </div>

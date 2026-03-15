@@ -4,7 +4,7 @@
 import { useEffect, useCallback, useRef } from 'react'
 
 // 2. Internal imports — stores and hooks
-import { useEditorStore } from '@/store/editorStore'
+import { useEditorStore, getProjectLocalState } from '@/store/editorStore'
 import { useFiles } from '@/hooks/useFiles'
 
 // 3. Internal imports — types
@@ -122,11 +122,7 @@ export function useEditor(projectId: string) {
     fileContent,
     isDirty,
     isReadOnly,
-    isLocalMode,
-    openLocalHandle,
-    openLocalPath,
     openFile: storeOpenFile,
-    openLocalFile: storeOpenLocalFile,
     setContent,
     markDirty,
     markClean,
@@ -134,9 +130,19 @@ export function useEditor(projectId: string) {
     closeFile,
     setLocalFolderHandle,
     setLocalFileTree,
+    openLocalFile: storeOpenLocalFile,
     switchToLocalMode,
     switchToDBMode,
+    getLocalState,
   } = useEditorStore()
+
+  const {
+    isLocalMode,
+    localFolderHandle: _localFolderHandle,
+    localFileTree: _localFileTree,
+    openLocalPath,
+    openLocalHandle,
+  } = getLocalState(projectId)
 
   const { files, updateFileStatus } = useFiles(projectId)
 
@@ -290,9 +296,9 @@ export function useEditor(projectId: string) {
 
       // ── Validation passed — link the folder ───────────────────────────────
       await saveHandleForProject(projectId, dirHandle)
-      setLocalFolderHandle(dirHandle)
-      switchToLocalMode()
-      setLocalFileTree(tree)
+      setLocalFolderHandle(projectId, dirHandle)
+      switchToLocalMode(projectId)
+      setLocalFileTree(projectId, tree)
 
       return { success: true, matchPct: 100 }
     } catch (err) {
@@ -344,10 +350,10 @@ export function useEditor(projectId: string) {
       }
 
       // Permission granted — restore the tree silently
-      setLocalFolderHandle(savedHandle)
-      switchToLocalMode()
+      setLocalFolderHandle(projectId, savedHandle)
+      switchToLocalMode(projectId)
       const tree = await walkDirectory(savedHandle)
-      setLocalFileTree(tree)
+      setLocalFileTree(projectId, tree)
     } catch {
       // Handle may be stale (folder deleted/moved) — clear it
       await clearHandleForProject(projectId)
@@ -358,7 +364,7 @@ export function useEditor(projectId: string) {
 
   const openLocalFile = useCallback(
     async (handle: FileSystemFileHandle, path: string) => {
-      storeOpenLocalFile(handle, path)
+      storeOpenLocalFile(projectId, handle, path)
 
       try {
         const file = await handle.getFile()
@@ -414,9 +420,8 @@ export function useEditor(projectId: string) {
   // a handle from this session), skip to avoid redundant re-walks.
 
   useEffect(() => {
-    if (!isLocalMode) {
-      restoreLocalFolder()
-    }
+    // Always attempt restore when projectId changes — each project has independent state
+    restoreLocalFolder()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]) // projectId change = different project = re-check its saved folder
 
@@ -563,12 +568,12 @@ export function useEditor(projectId: string) {
 
         // Step 8 — auto-link folder to this project exactly like openLocalFolder
         await saveHandleForProject(projectId, projectDirHandle)
-        setLocalFolderHandle(projectDirHandle)
-        switchToLocalMode()
+        setLocalFolderHandle(projectId, projectDirHandle)
+        switchToLocalMode(projectId)
 
         // Step 9 — walk the created folder to build the file tree
         const tree = await walkDirectory(projectDirHandle)
-        setLocalFileTree(tree)
+        setLocalFileTree(projectId, tree)
 
         return { success: true, folderName: rootName }
       } catch (err) {
@@ -630,7 +635,7 @@ export function useEditor(projectId: string) {
 
         if (isLocalMode) {
           // In local mode — find the file handle and write to disk
-          const { localFileTree } = useEditorStore.getState()
+          const { localFileTree } = getProjectLocalState(projectId)
 
           const findHandle = (
             nodes: LocalFileNode[],
@@ -725,7 +730,7 @@ export function useEditor(projectId: string) {
     closeFile,
     switchToDBMode: async () => {
       await clearHandleForProject(projectId)
-      switchToDBMode()
+      switchToDBMode(projectId)
     },
     onContentChange: handleContentChange,
   }

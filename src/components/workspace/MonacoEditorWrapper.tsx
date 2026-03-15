@@ -72,6 +72,8 @@ interface MonacoEditorWrapperProps {
   file: FileWithContent | null
   onContentChange: (content: string) => void
   isLocalMode?: boolean
+  openLocalPath?: string | null
+  onEditorMount?: (editor: { runFindReplace: () => void; runFind: () => void }) => void
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -79,11 +81,16 @@ export default function MonacoEditorWrapper({
   file,
   onContentChange,
   isLocalMode: isLocalModeProp,
+  openLocalPath: openLocalPathProp,
+  onEditorMount,
 }: MonacoEditorWrapperProps): JSX.Element {
-  const { isReadOnly, isLocalMode: isLocalModeStore, fileContent } = useEditorStore()
-  // Prefer prop (passed from parent) but fall back to store value
-  const isLocalMode = isLocalModeProp ?? isLocalModeStore
+  const { isReadOnly, fileContent } = useEditorStore()
+  const isLocalMode = isLocalModeProp ?? false
   const { settings } = useSettings()
+
+  // Ref to the live Monaco editor instance
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const editorInstanceRef = useRef<any>(null)
 
   // Stable ref for debounced callback to avoid stale closures
   const onContentChangeRef = useRef(onContentChange)
@@ -104,11 +111,10 @@ export default function MonacoEditorWrapper({
   const editorTheme = settings?.editorTheme ?? DEFAULT_EDITOR_THEME
   const editorFontSize = settings?.editorFontSize ?? DEFAULT_EDITOR_FONT_SIZE
 
-  // Resolve active path — local mode uses openLocalPath, DB mode uses file.filePath
-  const { openLocalPath } = useEditorStore()
-  const activePath = isLocalMode ? (openLocalPath ?? '') : (file?.filePath ?? '')
+  // Resolve active path — local mode uses openLocalPath prop, DB mode uses file.filePath
+  const activePath = isLocalMode ? (openLocalPathProp ?? '') : (file?.filePath ?? '')
   const language = activePath ? getFileLanguage(activePath) : 'plaintext'
-  const hasLocalFileOpen = isLocalMode && !!openLocalPath
+  const hasLocalFileOpen = isLocalMode && !!openLocalPathProp
 
   // Detect mobile to disable minimap (improves perf on small screens)
   const isMobile =
@@ -141,6 +147,21 @@ export default function MonacoEditorWrapper({
         language={language}
         theme={editorTheme}
         value={editorValue}
+        onMount={(editor) => {
+          editorInstanceRef.current = editor
+          if (onEditorMount) {
+            onEditorMount({
+              runFindReplace: () => {
+                editor.focus()
+                editor.getAction('editor.action.startFindReplaceAction')?.run()
+              },
+              runFind: () => {
+                editor.focus()
+                editor.getAction('actions.find')?.run()
+              },
+            })
+          }
+        }}
         onChange={(value) => {
           if (value !== undefined) {
             debouncedChange(value)
@@ -177,6 +198,9 @@ export default function MonacoEditorWrapper({
           tabSize: 2,
           insertSpaces: true,
           formatOnPaste: false,
+          find: {
+            addExtraSpaceOnTop: false,
+          },
 
           // Accessibility
           accessibilitySupport: 'auto',

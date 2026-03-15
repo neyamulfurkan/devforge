@@ -251,7 +251,8 @@ function buildLocalFileTree(nodes: LocalFileNode[]): TreeNode[] {
 export function EditorFileTree({ projectId }: EditorFileTreeProps): JSX.Element {
   const { files, updateFileStatus } = useFiles(projectId)
   const { openFileId, openFile, isLocalMode, openLocalFile } = useEditor(projectId)
-  const { localFileTree, openLocalPath } = useEditorStore()
+  const { getLocalState } = useEditorStore()
+  const { localFileTree, openLocalPath } = getLocalState(projectId)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set())

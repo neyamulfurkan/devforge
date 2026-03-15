@@ -26,14 +26,14 @@ interface EditorStore {
   isReadOnly: boolean
   cursorPosition: CursorPosition | null
 
-  // ── Local-mode state ───────────────────────────────────────────────────
-  isLocalMode: boolean
-  localFolderHandle: FileSystemDirectoryHandle | null
-  localFileTree: LocalFileNode[]
-  /** Path of the currently open local file, e.g. "src/app/page.tsx" */
-  openLocalPath: string | null
-  /** The FileSystemFileHandle for the currently open local file */
-  openLocalHandle: FileSystemFileHandle | null
+  // ── Local-mode state (keyed by projectId) ─────────────────────────────
+  localModeByProject: Record<string, {
+    isLocalMode: boolean
+    localFolderHandle: FileSystemDirectoryHandle | null
+    localFileTree: LocalFileNode[]
+    openLocalPath: string | null
+    openLocalHandle: FileSystemFileHandle | null
+  }>
 
   // ── DB-mode actions ────────────────────────────────────────────────────
   openFile: (fileId: string) => void
@@ -45,11 +45,36 @@ interface EditorStore {
   closeFile: () => void
 
   // ── Local-mode actions ─────────────────────────────────────────────────
-  setLocalFolderHandle: (handle: FileSystemDirectoryHandle) => void
-  setLocalFileTree: (tree: LocalFileNode[]) => void
-  openLocalFile: (handle: FileSystemFileHandle, path: string) => void
-  switchToLocalMode: () => void
-  switchToDBMode: () => void
+  setLocalFolderHandle: (projectId: string, handle: FileSystemDirectoryHandle) => void
+  setLocalFileTree: (projectId: string, tree: LocalFileNode[]) => void
+  openLocalFile: (projectId: string, handle: FileSystemFileHandle, path: string) => void
+  switchToLocalMode: (projectId: string) => void
+  switchToDBMode: (projectId: string) => void
+  getLocalState: (projectId: string) => {
+    isLocalMode: boolean
+    localFolderHandle: FileSystemDirectoryHandle | null
+    localFileTree: LocalFileNode[]
+    openLocalPath: string | null
+    openLocalHandle: FileSystemFileHandle | null
+  }
+}
+
+/** Standalone helper — reads per-project local state without circular self-reference */
+export function getProjectLocalState(projectId: string): {
+  isLocalMode: boolean
+  localFolderHandle: FileSystemDirectoryHandle | null
+  localFileTree: LocalFileNode[]
+  openLocalPath: string | null
+  openLocalHandle: FileSystemFileHandle | null
+} {
+  const store = useEditorStore.getState()
+  return store.localModeByProject[projectId] ?? {
+    isLocalMode: false,
+    localFolderHandle: null,
+    localFileTree: [],
+    openLocalPath: null,
+    openLocalHandle: null,
+  }
 }
 
 export const useEditorStore = create<EditorStore>((set) => ({
@@ -61,11 +86,7 @@ export const useEditorStore = create<EditorStore>((set) => ({
   cursorPosition: null,
 
   // ── Local-mode initial state ───────────────────────────────────────────
-  isLocalMode: false,
-  localFolderHandle: null,
-  localFileTree: [],
-  openLocalPath: null,
-  openLocalHandle: null,
+  localModeByProject: {},
 
   // ── DB-mode actions ────────────────────────────────────────────────────
   openFile: (fileId: string) =>
@@ -99,39 +120,89 @@ export const useEditorStore = create<EditorStore>((set) => ({
     }),
 
   // ── Local-mode actions ─────────────────────────────────────────────────
-  setLocalFolderHandle: (handle: FileSystemDirectoryHandle) =>
-    set({ localFolderHandle: handle }),
+  getLocalState: (projectId: string) => {
+    return getProjectLocalState(projectId)
+  },
 
-  setLocalFileTree: (tree: LocalFileNode[]) =>
-    set({ localFileTree: tree }),
+  setLocalFolderHandle: (projectId: string, handle: FileSystemDirectoryHandle) =>
+    set((state) => ({
+      localModeByProject: {
+        ...state.localModeByProject,
+        [projectId]: {
+          ...(state.localModeByProject[projectId] ?? {
+            isLocalMode: false,
+            localFileTree: [],
+            openLocalPath: null,
+            openLocalHandle: null,
+          }),
+          localFolderHandle: handle,
+        },
+      },
+    })),
 
-  openLocalFile: (handle: FileSystemFileHandle, path: string) =>
-    set({
-      openLocalHandle: handle,
-      openLocalPath: path,
+  setLocalFileTree: (projectId: string, tree: LocalFileNode[]) =>
+    set((state) => ({
+      localModeByProject: {
+        ...state.localModeByProject,
+        [projectId]: {
+          ...(state.localModeByProject[projectId] ?? {
+            isLocalMode: false,
+            localFolderHandle: null,
+            openLocalPath: null,
+            openLocalHandle: null,
+          }),
+          localFileTree: tree,
+        },
+      },
+    })),
+
+  openLocalFile: (projectId: string, handle: FileSystemFileHandle, path: string) =>
+    set((state) => ({
+      localModeByProject: {
+        ...state.localModeByProject,
+        [projectId]: {
+          ...(state.localModeByProject[projectId] ?? {
+            isLocalMode: true,
+            localFolderHandle: null,
+            localFileTree: [],
+          }),
+          openLocalHandle: handle,
+          openLocalPath: path,
+        },
+      },
       fileContent: '',
       isDirty: false,
       isReadOnly: false,
       cursorPosition: null,
-    }),
+    })),
 
-  switchToLocalMode: () =>
-    set({
-      isLocalMode: true,
-      // Reset DB state so nothing bleeds across
+  switchToLocalMode: (projectId: string) =>
+    set((state) => ({
+      localModeByProject: {
+        ...state.localModeByProject,
+        [projectId]: {
+          ...(state.localModeByProject[projectId] ?? {
+            localFolderHandle: null,
+            localFileTree: [],
+            openLocalPath: null,
+            openLocalHandle: null,
+          }),
+          isLocalMode: true,
+        },
+      },
       openFileId: null,
       fileContent: '',
       isDirty: false,
-    }),
+    })),
 
-  switchToDBMode: () =>
-    set({
-      isLocalMode: false,
-      localFolderHandle: null,
-      localFileTree: [],
-      openLocalPath: null,
-      openLocalHandle: null,
-      fileContent: '',
-      isDirty: false,
+  switchToDBMode: (projectId: string) =>
+    set((state) => {
+      const next = { ...state.localModeByProject }
+      delete next[projectId]
+      return {
+        localModeByProject: next,
+        fileContent: '',
+        isDirty: false,
+      }
     }),
 }))
