@@ -9,10 +9,14 @@ import dynamic from 'next/dynamic'
 
 // 3. Third-party library imports
 import { AlertTriangle } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 // 4. Internal imports — shared components
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
+
+// 4b. Additional icon imports for EditorLayout
+import { FolderOpen } from 'lucide-react'
 
 // 5. Internal imports — workspace components
 import { WorkspaceNav } from '@/components/workspace/WorkspaceNav'
@@ -30,6 +34,7 @@ import { useProject } from '@/hooks/useProject'
 import { useErrors } from '@/hooks/useErrors'
 import { useEditor } from '@/hooks/useEditor'
 import { useProjectStore } from '@/store/projectStore'
+import { useEditorStore } from '@/store/editorStore'
 import type { WorkspaceTab, FileWithContent } from '@/types'
 
 // 7. Monaco editor — SSR disabled (required: browser-only DOM APIs)
@@ -112,6 +117,55 @@ function EditorLoadingSkeleton(): JSX.Element {
   )
 }
 
+// ─── Editor mode switcher bar ─────────────────────────────────────────────────
+// Sits above the editor. Lets user toggle between DB files and local folder.
+
+function EditorModeSwitcher({ projectId }: { projectId: string }): JSX.Element {
+  const { isLocalMode, openLocalFolder, switchToDBMode } = useEditor(projectId)
+  const { localFolderHandle } = useEditorStore()
+
+  return (
+    <div className="flex h-9 flex-shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3">
+      <button
+        type="button"
+        onClick={switchToDBMode}
+        className={cn(
+          'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+          !isLocalMode
+            ? 'bg-[var(--accent-light)] text-[var(--accent-primary)]'
+            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]'
+        )}
+      >
+        Project Files
+      </button>
+      <button
+        type="button"
+        onClick={isLocalMode && localFolderHandle ? undefined : openLocalFolder}
+        className={cn(
+          'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+          isLocalMode
+            ? 'bg-[var(--accent-light)] text-[var(--accent-primary)]'
+            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]'
+        )}
+      >
+        {isLocalMode && localFolderHandle
+          ? `📁 ${localFolderHandle.name}`
+          : 'Open Local Folder'}
+      </button>
+      {isLocalMode && localFolderHandle && (
+        <button
+          type="button"
+          onClick={openLocalFolder}
+          className="ml-auto text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+          title="Change folder"
+        >
+          Change
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ─── Editor layout sub-component ─────────────────────────────────────────────
 // Three-panel layout: file tree (left) | editor (center) | top bar (pinned top)
 
@@ -120,21 +174,29 @@ interface EditorLayoutProps {
 }
 
 function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
-  const { openFile: openFileById, openFileId, onContentChange, saveFile } = useEditor(projectId)
+  const {
+    openFile: openFileById,
+    openFileId,
+    onContentChange,
+    saveFile,
+    isLocalMode,
+    openLocalFolder,
+  } = useEditor(projectId)
   const { project } = useProject(projectId)
+  const { localFolderHandle } = useEditorStore()
 
-  // Derive the currently open file from project files
+  // Derive the currently open DB file from project files
   const openFile =
     (project as (typeof project & { files?: { id: string; [key: string]: unknown }[] }) | null)
       ?.files?.find((f) => f.id === openFileId) ?? null
 
   const handleContentChange = useCallback(
     (content: string) => {
-      if (openFileId && onContentChange) {
+      if (onContentChange) {
         onContentChange(content)
       }
     },
-    [openFileId, onContentChange]
+    [onContentChange]
   )
 
   const handleMarkComplete = useCallback(async () => {
@@ -143,12 +205,32 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
     }
   }, [openFileId, saveFile])
 
-  const handleOpenInEditor = useCallback(
-    (fileId: string) => {
-      openFileById(fileId)
-    },
-    [openFileById]
-  )
+  // ── Local folder not yet assigned — show assign prompt ───────────────────
+  if (isLocalMode && !localFolderHandle) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[var(--bg-primary)]">
+        <div className="flex flex-col items-center gap-4 max-w-sm text-center px-6">
+          <div className="h-16 w-16 rounded-2xl bg-[var(--accent-light)] flex items-center justify-center">
+            <FolderOpen className="h-8 w-8 text-[var(--accent-primary)]" />
+          </div>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">
+            Open a local folder
+          </h2>
+          <p className="text-sm text-[var(--text-secondary)]">
+            Select a folder from your laptop to browse and edit its files directly.
+            No files are uploaded — everything stays local.
+          </p>
+          <button
+            type="button"
+            onClick={openLocalFolder}
+            className="w-full rounded-lg bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white font-medium py-2.5 px-4 text-sm transition-colors active:scale-95"
+          >
+            Choose Folder
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-full w-full overflow-hidden">
@@ -380,8 +462,12 @@ export default function WorkspacePage(): JSX.Element {
 
       case 'editor':
         return (
-          <div className="flex flex-1 overflow-hidden">
-            <EditorLayout projectId={projectId} />
+          <div className="flex flex-1 flex-col overflow-hidden">
+            {/* Mode switcher bar */}
+            <EditorModeSwitcher projectId={projectId} />
+            <div className="flex flex-1 overflow-hidden">
+              <EditorLayout projectId={projectId} />
+            </div>
           </div>
         )
 

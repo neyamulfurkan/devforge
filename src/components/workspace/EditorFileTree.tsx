@@ -22,10 +22,12 @@ import { SearchInput } from '@/components/shared/SearchInput'
 // 5. Internal imports — services, hooks, stores, types, utils
 import { useEditor } from '@/hooks/useEditor'
 import { useFiles } from '@/hooks/useFiles'
+import { useEditorStore } from '@/store/editorStore'
 import { copyToClipboard } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { VIRTUALIZATION_THRESHOLD } from '@/lib/constants'
 import type { FileWithContent, FileStatus } from '@/types'
+import type { LocalFileNode } from '@/store/editorStore'
 
 // 6. Local types
 interface EditorFileTreeProps {
@@ -199,24 +201,94 @@ function collectFolderPaths(nodes: TreeNode[]): string[] {
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─── Local-mode tree builder from LocalFileNode[] ─────────────────────────────
+
+function buildLocalFileTree(nodes: LocalFileNode[]): TreeNode[] {
+  const result: TreeNode[] = []
+  for (const node of nodes) {
+    if (node.type === 'folder') {
+      result.push({
+        type: 'folder',
+        name: node.name,
+        path: node.path,
+        children: buildLocalFileTree(node.children ?? []),
+      })
+    } else {
+      // Create a minimal FileWithContent shell so renderRow can work uniformly
+      const shell: FileWithContent = {
+        id: node.path,           // use path as stable id in local mode
+        projectId: '',
+        fileNumber: '',
+        filePath: node.path,
+        fileName: node.name,
+        phase: 0,
+        phaseName: '',
+        status: 'EMPTY',
+        codeContent: null,
+        lineCount: null,
+        filePrompt: null,
+        jsonSummary: null,
+        requiredFiles: [],
+        notes: null,
+        codeAddedAt: null,
+        completedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      result.push({
+        type: 'file',
+        name: node.name,
+        path: node.path,
+        file: shell,
+      })
+    }
+  }
+  return result
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export function EditorFileTree({ projectId }: EditorFileTreeProps): JSX.Element {
   const { files, updateFileStatus } = useFiles(projectId)
-  const { openFileId, openFile } = useEditor(projectId)
+  const { openFileId, openFile, isLocalMode, openLocalFile } = useEditor(projectId)
+  const { localFileTree, openLocalPath } = useEditorStore()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set())
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
 
-  // ── Tree construction ───────────────────────────────────────────────────
+  // ── Tree construction (DB mode vs local mode) ────────────────────────────
 
+  // In local mode, build tree from localFileTree. In DB mode, build from files.
   const filteredFiles = useMemo(() => {
+    if (isLocalMode) return []          // not used in local mode
     if (!searchQuery) return files
     return files.filter((f) =>
       f.filePath.toLowerCase().includes(searchQuery.toLowerCase())
     )
-  }, [files, searchQuery])
+  }, [isLocalMode, files, searchQuery])
 
-  const tree = useMemo(() => buildFileTree(filteredFiles), [filteredFiles])
+  const tree = useMemo(() => {
+    if (isLocalMode) {
+      const baseTree = buildLocalFileTree(localFileTree)
+      if (!searchQuery) return baseTree
+      // Filter local tree by flattening, filtering, then rebuilding
+      const filterNodes = (nodes: TreeNode[]): TreeNode[] =>
+        nodes.reduce<TreeNode[]>((acc, node) => {
+          if (node.type === 'folder') {
+            const filteredChildren = filterNodes(node.children)
+            if (filteredChildren.length > 0) {
+              acc.push({ ...node, children: filteredChildren })
+            }
+          } else if (node.path.toLowerCase().includes(searchQuery.toLowerCase())) {
+            acc.push(node)
+          }
+          return acc
+        }, [])
+      return filterNodes(baseTree)
+    }
+    return buildFileTree(filteredFiles)
+  }, [isLocalMode, localFileTree, filteredFiles, searchQuery])
 
   // When searching, expand all folders automatically
   const effectiveExpanded = useMemo(() => {
@@ -251,9 +323,32 @@ export function EditorFileTree({ projectId }: EditorFileTreeProps): JSX.Element 
 
   const handleFileClick = useCallback(
     (fileId: string) => {
-      openFile(fileId)
+      if (isLocalMode) {
+        // In local mode, fileId is the file path — find the handle in localFileTree
+        const findHandle = (
+          nodes: LocalFileNode[],
+          targetPath: string
+        ): FileSystemFileHandle | null => {
+          for (const node of nodes) {
+            if (node.type === 'file' && node.path === targetPath) {
+              return node.handle as FileSystemFileHandle
+            }
+            if (node.type === 'folder' && node.children) {
+              const found = findHandle(node.children, targetPath)
+              if (found) return found
+            }
+          }
+          return null
+        }
+        const handle = findHandle(localFileTree, fileId)
+        if (handle) {
+          openLocalFile(handle, fileId)
+        }
+      } else {
+        openFile(fileId)
+      }
     },
-    [openFile]
+    [isLocalMode, localFileTree, openLocalFile, openFile]
   )
 
   const handleContextMenu = useCallback(
@@ -325,8 +420,12 @@ export function EditorFileTree({ projectId }: EditorFileTreeProps): JSX.Element 
 
       // File row
       const file = row.file!
-      const isActive = file.id === openFileId
-      const iconColor = getFileIconColor(file.status)
+      // In local mode, active file is tracked by path; in DB mode by id
+      const isActive = isLocalMode
+        ? row.path === openLocalPath
+        : file.id === openFileId
+      // In local mode all files show as neutral (no DB status)
+      const iconColor = isLocalMode ? 'text-[var(--text-tertiary)]' : getFileIconColor(file.status)
 
       return (
         <DropdownMenu
@@ -382,19 +481,24 @@ export function EditorFileTree({ projectId }: EditorFileTreeProps): JSX.Element 
               >
                 Copy Path
               </DropdownMenuItem>
-              <DropdownMenuSeparator className="bg-[var(--border-subtle)]" />
-              <DropdownMenuItem
-                onClick={() => handleMarkComplete(file.id)}
-                className="text-[var(--status-complete)] focus:bg-[var(--bg-quaternary)] cursor-pointer text-sm"
-              >
-                Mark Complete
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => setContextMenu(null)}
-                className="text-[var(--text-secondary)] focus:bg-[var(--bg-quaternary)] cursor-pointer text-sm"
-              >
-                View Prompt
-              </DropdownMenuItem>
+              {/* DB-only actions — hidden in local mode */}
+              {!isLocalMode && (
+                <>
+                  <DropdownMenuSeparator className="bg-[var(--border-subtle)]" />
+                  <DropdownMenuItem
+                    onClick={() => handleMarkComplete(file.id)}
+                    className="text-[var(--status-complete)] focus:bg-[var(--bg-quaternary)] cursor-pointer text-sm"
+                  >
+                    Mark Complete
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setContextMenu(null)}
+                    className="text-[var(--text-secondary)] focus:bg-[var(--bg-quaternary)] cursor-pointer text-sm"
+                  >
+                    View Prompt
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           )}
         </DropdownMenu>
@@ -402,6 +506,8 @@ export function EditorFileTree({ projectId }: EditorFileTreeProps): JSX.Element 
     },
     [
       openFileId,
+      openLocalPath,
+      isLocalMode,
       effectiveExpanded,
       contextMenu,
       toggleFolder,
@@ -468,14 +574,22 @@ export function EditorFileTree({ projectId }: EditorFileTreeProps): JSX.Element 
         />
       </div>
 
-      {/* File count */}
-      <div className="flex-shrink-0 px-3 py-1.5 border-b border-[var(--border-subtle)]">
+      {/* File count + mode indicator */}
+      <div className="flex-shrink-0 px-3 py-1.5 border-b border-[var(--border-subtle)] flex items-center justify-between">
         <span className="text-xs text-[var(--text-tertiary)]">
-          {filteredFiles.length} {filteredFiles.length === 1 ? 'file' : 'files'}
-          {searchQuery && files.length !== filteredFiles.length
-            ? ` of ${files.length}`
-            : ''}
+          {isLocalMode
+            ? `local folder`
+            : `${filteredFiles.length} ${filteredFiles.length === 1 ? 'file' : 'files'}${
+                searchQuery && files.length !== filteredFiles.length
+                  ? ` of ${files.length}`
+                  : ''
+              }`}
         </span>
+        {isLocalMode && (
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[var(--accent-light)] text-[var(--accent-primary)]">
+            LOCAL
+          </span>
+        )}
       </div>
 
       {/* Tree */}

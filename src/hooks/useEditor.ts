@@ -9,6 +9,55 @@ import { useFiles } from '@/hooks/useFiles'
 
 // 3. Internal imports — types
 import type { FileWithContent } from '@/types'
+import type { LocalFileNode } from '@/store/editorStore'
+
+// ─── Local helper — walk a FileSystemDirectoryHandle recursively ─────────────
+async function walkDirectory(
+  dirHandle: FileSystemDirectoryHandle,
+  prefix = ''
+): Promise<LocalFileNode[]> {
+  const nodes: LocalFileNode[] = []
+
+  for await (const [name, handle] of dirHandle as unknown as AsyncIterable <
+    [string, FileSystemFileHandle | FileSystemDirectoryHandle]
+  >) {
+    // Skip hidden files/folders (e.g. .git, .next, node_modules)
+    if (name.startsWith('.') || name === 'node_modules') continue
+
+    const path = prefix ? `${prefix}/${name}` : name
+
+    if (handle.kind === 'directory') {
+      const children = await walkDirectory(
+        handle as FileSystemDirectoryHandle,
+        path
+      )
+      nodes.push({
+        type: 'folder',
+        name,
+        path,
+        handle,
+        children,
+      })
+    } else {
+      nodes.push({
+        type: 'file',
+        name,
+        path,
+        handle,
+      })
+    }
+  }
+
+  // Sort: folders first, then files, both alphabetically
+  nodes.sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'folder' ? -1 : 1
+    return a.name.localeCompare(b.name)
+  })
+
+  return nodes
+}
+
+// ─── Main hook ───────────────────────────────────────────────────────────────
 
 export function useEditor(projectId: string) {
   const {
@@ -16,12 +65,20 @@ export function useEditor(projectId: string) {
     fileContent,
     isDirty,
     isReadOnly,
+    isLocalMode,
+    openLocalHandle,
+    openLocalPath,
     openFile: storeOpenFile,
+    openLocalFile: storeOpenLocalFile,
     setContent,
     markDirty,
     markClean,
     toggleReadOnly,
     closeFile,
+    setLocalFolderHandle,
+    setLocalFileTree,
+    switchToLocalMode,
+    switchToDBMode,
   } = useEditorStore()
 
   const { files, updateFileStatus } = useFiles(projectId)
@@ -33,7 +90,7 @@ export function useEditor(projectId: string) {
   const isSavingRef = useRef(false)
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // ── Core actions ─────────────────────────────────────────────────────────
+  // ── DB-mode: open file ────────────────────────────────────────────────────
 
   const openFile = useCallback(
     async (fileId: string) => {
@@ -56,7 +113,13 @@ export function useEditor(projectId: string) {
     [projectId, storeOpenFile, setContent, markClean]
   )
 
+  // ── DB-mode: save file ────────────────────────────────────────────────────
+
   const saveCurrentFile = useCallback(async () => {
+    if (isLocalMode) {
+      // Local save is handled by saveLocalFile below
+      return
+    }
     if (!openFileId || isSavingRef.current) return
 
     isSavingRef.current = true
@@ -74,14 +137,89 @@ export function useEditor(projectId: string) {
     } finally {
       isSavingRef.current = false
     }
-  }, [openFileId, projectId, fileContent, markClean])
+  }, [isLocalMode, openFileId, projectId, fileContent, markClean])
+
+  // ── DB-mode: mark complete ────────────────────────────────────────────────
 
   const markComplete = useCallback(async () => {
     if (!openFileId) return
     await updateFileStatus(openFileId, 'COMPLETE')
   }, [openFileId, updateFileStatus])
 
-  // Expose setContent wrapped to also mark dirty
+  // ── Local-mode: open folder picker ───────────────────────────────────────
+
+  const openLocalFolder = useCallback(async () => {
+    // showDirectoryPicker is Chrome/Edge only — guard gracefully
+    if (typeof window === 'undefined' || !('showDirectoryPicker' in window)) {
+      console.warn('File System Access API not supported in this browser.')
+      return
+    }
+
+    try {
+      const dirHandle = await (
+        window as Window & { showDirectoryPicker: () => Promise<FileSystemDirectoryHandle> }
+      ).showDirectoryPicker()
+
+      setLocalFolderHandle(dirHandle)
+      switchToLocalMode()
+
+      const tree = await walkDirectory(dirHandle)
+      setLocalFileTree(tree)
+    } catch (err) {
+      // User cancelled the picker — not an error
+      if ((err as DOMException).name !== 'AbortError') {
+        console.error('openLocalFolder error:', err)
+      }
+    }
+  }, [setLocalFolderHandle, setLocalFileTree, switchToLocalMode])
+
+  // ── Local-mode: open a specific file from the tree ───────────────────────
+
+  const openLocalFile = useCallback(
+    async (handle: FileSystemFileHandle, path: string) => {
+      storeOpenLocalFile(handle, path)
+
+      try {
+        const file = await handle.getFile()
+        const text = await file.text()
+        setContent(text)
+        markClean()
+      } catch {
+        setContent('')
+        markClean()
+      }
+    },
+    [storeOpenLocalFile, setContent, markClean]
+  )
+
+  // ── Local-mode: save current file to disk ────────────────────────────────
+
+  const saveLocalFile = useCallback(async () => {
+    if (!openLocalHandle || isSavingRef.current) return
+
+    isSavingRef.current = true
+    try {
+      const writable = await openLocalHandle.createWritable()
+      await writable.write(fileContent)
+      await writable.close()
+      markClean()
+    } finally {
+      isSavingRef.current = false
+    }
+  }, [openLocalHandle, fileContent, markClean])
+
+  // ── Unified save (respects current mode) ─────────────────────────────────
+
+  const save = useCallback(async () => {
+    if (isLocalMode) {
+      await saveLocalFile()
+    } else {
+      await saveCurrentFile()
+    }
+  }, [isLocalMode, saveLocalFile, saveCurrentFile])
+
+  // ── Expose setContent wrapped to also mark dirty ──────────────────────────
+
   const handleContentChange = useCallback(
     (content: string) => {
       setContent(content)
@@ -93,14 +231,15 @@ export function useEditor(projectId: string) {
   // ── Auto-save on dirty ────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!isDirty || !openFileId) return
+    const hasOpenTarget = isLocalMode ? !!openLocalHandle : !!openFileId
+    if (!isDirty || !hasOpenTarget) return
 
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current)
     }
 
     autoSaveTimerRef.current = setTimeout(() => {
-      saveCurrentFile()
+      save()
     }, 500)
 
     return () => {
@@ -108,7 +247,7 @@ export function useEditor(projectId: string) {
         clearTimeout(autoSaveTimerRef.current)
       }
     }
-  }, [isDirty, openFileId, fileContent, saveCurrentFile])
+  }, [isDirty, isLocalMode, openLocalHandle, openFileId, fileContent, save])
 
   // ── Cleanup on unmount ────────────────────────────────────────────────────
 
@@ -121,17 +260,31 @@ export function useEditor(projectId: string) {
   }, [])
 
   return {
+    // State
     openFileId,
     fileContent,
     isDirty,
     isReadOnly,
+    isLocalMode,
+    openLocalPath,
     currentFile,
+
+    // DB-mode actions
     openFile,
     saveCurrentFile,
-    saveFile: markComplete,   // alias expected by workspace page
+    saveFile: markComplete,       // alias expected by workspace page
     markComplete,
+
+    // Local-mode actions
+    openLocalFolder,
+    openLocalFile,
+    saveLocalFile,
+
+    // Unified
+    save,
     toggleReadOnly,
     closeFile,
+    switchToDBMode,
     onContentChange: handleContentChange,
   }
 }

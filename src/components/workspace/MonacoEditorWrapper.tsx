@@ -78,7 +78,7 @@ export default function MonacoEditorWrapper({
   file,
   onContentChange,
 }: MonacoEditorWrapperProps): JSX.Element {
-  const { isReadOnly } = useEditorStore()
+  const { isReadOnly, isLocalMode, fileContent } = useEditorStore()
   const { settings } = useSettings()
 
   // Stable ref for debounced callback to avoid stale closures
@@ -119,6 +119,11 @@ export default function MonacoEditorWrapper({
   }
 
   // ── Monaco editor ──
+  // In local mode, content lives in editorStore.fileContent (loaded from disk).
+  // In DB mode, content is seeded from file.codeContent on first open, then
+  // kept in sync via onContentChange / auto-save.
+  const editorValue = isLocalMode ? fileContent : (file.codeContent ?? fileContent)
+
   return (
     <div className="h-full w-full overflow-hidden">
       <MonacoEditor
@@ -126,7 +131,7 @@ export default function MonacoEditorWrapper({
         width="100%"
         language={language}
         theme={editorTheme}
-        value={file.codeContent ?? ''}
+        value={editorValue}
         onChange={(value) => {
           if (value !== undefined) {
             debouncedChange(value)

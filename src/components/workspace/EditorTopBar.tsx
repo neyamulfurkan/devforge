@@ -28,7 +28,7 @@ interface EditorTopBarProps {
 }
 
 export function EditorTopBar({ file, onMarkComplete }: EditorTopBarProps): JSX.Element {
-  const { isReadOnly, toggleReadOnly, fileContent } = useEditorStore()
+  const { isReadOnly, toggleReadOnly, fileContent, isLocalMode, openLocalPath } = useEditorStore()
   const [isMarkingComplete, setIsMarkingComplete] = useState(false)
 
   const handleMarkComplete = useCallback(async () => {
@@ -41,10 +41,11 @@ export function EditorTopBar({ file, onMarkComplete }: EditorTopBarProps): JSX.E
     }
   }, [onMarkComplete, isMarkingComplete])
 
-  // Build breadcrumb segments from file path
-  const breadcrumbSegments = file ? file.filePath.split('/') : []
+  // In local mode, use the open local path for the breadcrumb
+  const displayPath = isLocalMode ? (openLocalPath ?? '') : (file?.filePath ?? '')
+  const breadcrumbSegments = displayPath ? displayPath.split('/') : []
 
-  if (!file) {
+  if (!file && !isLocalMode) {
     return (
       <div
         className={cn(
@@ -53,6 +54,19 @@ export function EditorTopBar({ file, onMarkComplete }: EditorTopBarProps): JSX.E
         )}
       >
         <span className="text-sm text-[var(--text-tertiary)]">No file open</span>
+      </div>
+    )
+  }
+
+  if (!openLocalPath && isLocalMode) {
+    return (
+      <div
+        className={cn(
+          'flex h-11 items-center border-b border-[var(--border-subtle)]',
+          'bg-[var(--bg-secondary)] px-4'
+        )}
+      >
+        <span className="text-sm text-[var(--text-tertiary)]">Select a file from the folder</span>
       </div>
     )
   }
@@ -88,14 +102,25 @@ export function EditorTopBar({ file, onMarkComplete }: EditorTopBarProps): JSX.E
         })}
       </div>
 
-      {/* Center: Status badge */}
-      <div className="flex-shrink-0">
-        <StatusBadge status={file.status} />
-      </div>
+      {/* Center: Status badge — DB mode only */}
+      {!isLocalMode && file && (
+        <div className="flex-shrink-0">
+          <StatusBadge status={file.status} />
+        </div>
+      )}
+
+      {/* Center: LOCAL badge — local mode only */}
+      {isLocalMode && (
+        <div className="flex-shrink-0">
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[var(--accent-light)] text-[var(--accent-primary)]">
+            LOCAL
+          </span>
+        </div>
+      )}
 
       {/* Right: Actions */}
       <div className="flex flex-shrink-0 items-center gap-2">
-        {/* Copy all file content */}
+        {/* Copy all file content — always shown */}
         <CopyButton
           value={fileContent}
           size="sm"
@@ -103,27 +128,29 @@ export function EditorTopBar({ file, onMarkComplete }: EditorTopBarProps): JSX.E
           aria-label="Copy file content"
         />
 
-        {/* Mark complete */}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleMarkComplete}
-          disabled={isMarkingComplete || file.status === 'COMPLETE'}
-          className={cn(
-            'h-7 gap-1.5 px-2 text-xs',
-            file.status === 'COMPLETE'
-              ? 'text-[var(--status-complete)] cursor-default'
-              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-          )}
-          aria-label="Mark file as complete"
-        >
-          <CheckSquare className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">
-            {file.status === 'COMPLETE' ? 'Complete' : 'Mark Complete'}
-          </span>
-        </Button>
+        {/* Mark complete — DB mode only */}
+        {!isLocalMode && file && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleMarkComplete}
+            disabled={isMarkingComplete || file.status === 'COMPLETE'}
+            className={cn(
+              'h-7 gap-1.5 px-2 text-xs',
+              file.status === 'COMPLETE'
+                ? 'text-[var(--status-complete)] cursor-default'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            )}
+            aria-label="Mark file as complete"
+          >
+            <CheckSquare className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">
+              {file.status === 'COMPLETE' ? 'Complete' : 'Mark Complete'}
+            </span>
+          </Button>
+        )}
 
-        {/* Read-only toggle */}
+        {/* Read-only toggle — always shown */}
         <Button
           variant="ghost"
           size="sm"
@@ -147,24 +174,26 @@ export function EditorTopBar({ file, onMarkComplete }: EditorTopBarProps): JSX.E
         {/* Divider */}
         <div className="h-4 w-px bg-[var(--border-subtle)]" aria-hidden="true" />
 
-        {/* Line count + last modified */}
-        <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
-          {file.lineCount != null && (
-            <Badge
-              className={cn(
-                'rounded px-1.5 py-0 text-[11px] font-mono',
-                'bg-[var(--bg-quaternary)] text-[var(--text-tertiary)] border-none'
-              )}
-            >
-              {file.lineCount.toLocaleString()}L
-            </Badge>
-          )}
-          {file.updatedAt && (
-            <span className="hidden md:inline">
-              {formatRelativeTime(file.updatedAt)}
-            </span>
-          )}
-        </div>
+        {/* Line count + last modified — DB mode only */}
+        {!isLocalMode && file && (
+          <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
+            {file.lineCount != null && (
+              <Badge
+                className={cn(
+                  'rounded px-1.5 py-0 text-[11px] font-mono',
+                  'bg-[var(--bg-quaternary)] text-[var(--text-tertiary)] border-none'
+                )}
+              >
+                {file.lineCount.toLocaleString()}L
+              </Badge>
+            )}
+            {file.updatedAt && (
+              <span className="hidden md:inline">
+                {formatRelativeTime(file.updatedAt)}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
