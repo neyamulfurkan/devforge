@@ -349,11 +349,19 @@ export function useEditor(projectId: string) {
         return
       }
 
-      // Permission granted — restore the tree silently
+      // Permission granted — restore handle and tree silently.
+      // Do NOT call switchToLocalMode here — let the user see the linked
+      // folder in the switcher bar and choose to use it. This prevents
+      // auto-hijacking the editor on every page load.
       setLocalFolderHandle(projectId, savedHandle)
-      switchToLocalMode(projectId)
       const tree = await walkDirectory(savedHandle)
       setLocalFileTree(projectId, tree)
+      // Only switch to local mode if the user was previously in local mode
+      // (i.e. they had a file open). Check by seeing if openLocalPath exists.
+      const existingState = getProjectLocalState(projectId)
+      if (existingState.isLocalMode || existingState.openLocalPath) {
+        switchToLocalMode(projectId)
+      }
     } catch {
       // Handle may be stale (folder deleted/moved) — clear it
       await clearHandleForProject(projectId)
@@ -482,13 +490,27 @@ export function useEditor(projectId: string) {
           }
         ).showDirectoryPicker({ mode: 'readwrite' })
 
-        // Step 2 — derive a safe folder name from the project files
-        // Use the first file's root segment as the project folder name,
-        // falling back to projectId if files aren't loaded yet
-        const rootName =
-          files.length > 0
-            ? (files[0]?.filePath.split('/')[0] ?? `project-${projectId.slice(0, 8)}`)
-            : `project-${projectId.slice(0, 8)}`
+        // Step 2 — derive a safe folder name from the project name
+        // Count how many files share each root segment and pick the most common one.
+        // This avoids picking "package.json" when files are flat root-level files.
+        let rootName = `project-${projectId.slice(0, 8)}`
+        if (files.length > 0) {
+          const rootCounts = new Map<string, number>()
+          for (const f of files) {
+            const segments = f.filePath.split('/')
+            // Only count segments that look like folder names (no extension)
+            if (segments.length > 1) {
+              const root = segments[0] ?? ''
+              if (root && !root.includes('.')) {
+                rootCounts.set(root, (rootCounts.get(root) ?? 0) + 1)
+              }
+            }
+          }
+          if (rootCounts.size > 0) {
+            // Pick the root segment shared by the most files
+            rootName = [...rootCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? rootName
+          }
+        }
 
         // Step 3 — create the root project folder inside the chosen location
         const projectDirHandle = await parentHandle.getDirectoryHandle(rootName, {

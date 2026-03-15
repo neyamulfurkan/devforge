@@ -178,63 +178,63 @@ function EditorModeSwitcher({ projectId }: { projectId: string }): JSX.Element {
         </button>
       )}
 
-      {/* Local folder tab — primary when folder is linked */}
+      {/* If folder already linked — show activate button; else show open picker */}
       {localFolderHandle ? (
-        // Folder is linked — show it as the active permanent tab
         <button
           type="button"
-          onClick={isLocalMode ? undefined : undefined}
-          className={cn(
-            'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-            isLocalMode
-              ? 'bg-[var(--accent-light)] text-[var(--accent-primary)]'
-              : 'bg-[var(--accent-light)] text-[var(--accent-primary)]'
-          )}
-          title={`Local folder: ${localFolderHandle.name}`}
+          onClick={() => {
+            // User explicitly wants to use this folder — switch to local mode
+            if (!isLocalMode) switchToDBMode().then(() => {
+              // re-activate local mode for this project
+              openLocalFolder()
+            })
+          }}
+          className="flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors bg-[var(--accent-light)] text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-white"
+          title={`Linked: ${localFolderHandle.name} — click to open in editor`}
         >
+          <FolderOpen className="h-3 w-3" />
           📁 {localFolderHandle.name}
         </button>
       ) : (
-        // No folder linked yet — show options
-        <>
-          <button
-            type="button"
-            onClick={handleOpenFolder}
-            className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)] rounded px-2.5 py-1 text-xs font-medium transition-colors"
-          >
-            Open Existing Folder
-          </button>
-
-          <button
-            type="button"
-            onClick={handleCreate}
-            disabled={creating}
-            title="Auto-create all project files and folders on your laptop"
-            className={cn(
-              'flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors',
-              'border border-[var(--accent-border)] bg-[var(--accent-light)] text-[var(--accent-primary)]',
-              'hover:bg-[var(--accent-primary)] hover:text-white disabled:opacity-50'
-            )}
-          >
-            {creating ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <FolderDown className="h-3 w-3" />
-            )}
-            {creating ? 'Creating…' : 'Create Project Folder'}
-          </button>
-        </>
+        <button
+          type="button"
+          onClick={handleOpenFolder}
+          className="flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]"
+          title="Open a local folder for this project"
+        >
+          <FolderOpen className="h-3 w-3" />
+          Open Folder
+        </button>
       )}
 
-      {/* Change folder button — only when folder is linked */}
+      <button
+        type="button"
+        onClick={handleCreate}
+        disabled={creating}
+        title="Auto-create all project files and folders on your laptop"
+        className={cn(
+          'flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors',
+          'border border-[var(--accent-border)] bg-[var(--accent-light)] text-[var(--accent-primary)]',
+          'hover:bg-[var(--accent-primary)] hover:text-white disabled:opacity-50'
+        )}
+      >
+        {creating ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <FolderDown className="h-3 w-3" />
+        )}
+        {creating ? 'Creating…' : 'Create Folder'}
+      </button>
+
+      {/* Disconnect button — only when folder is linked */}
       {localFolderHandle && (
         <button
           type="button"
-          onClick={handleCreate}
-          className="ml-auto text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
-          title="Create or re-link a different folder"
+          onClick={switchToDBMode}
+          className="ml-auto text-xs text-[var(--text-tertiary)] hover:text-[var(--status-error)] transition-colors"
+          title="Disconnect local folder — switch back to cloud files"
         >
-          Change
+          Disconnect
         </button>
       )}
     {/* Mismatch warning — shown when opened folder doesn't match project */}
