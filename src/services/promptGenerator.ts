@@ -184,7 +184,74 @@ export async function generateGlobalContextPrompt(
     PROJECT_DESCRIPTION: input.projectDescription,
   }
 
-  return substituteVariables(template.content, variables)
+  const basePrompt = substituteVariables(template.content, variables)
+
+  // ─── Dependency ordering rule — always appended to every GCD prompt ───────
+  // This instruction is non-negotiable and must survive any template changes.
+  // It enforces backward-only dependencies in Section 9 so the file sequence
+  // can always be followed top-to-bottom with no forward references.
+  const dependencyRule = `
+${'═'.repeat(70)}
+CRITICAL RULE — DEPENDENCY ORDERING (NON-NEGOTIABLE):
+${'═'.repeat(70)}
+
+When generating Section 4 (File Structure) and Section 9 (File Generation Sequence), you MUST enforce the following rule without exception:
+
+BACKWARD DEPENDENCIES ONLY — A file may only depend on files with a LOWER file number than itself.
+
+This means:
+- FILE 045 may only list files 001–044 as required dependencies
+- FILE 001 may have NO dependencies (it is always first)
+- NO file may ever reference a file with a higher number than itself
+- Forward dependencies (e.g. FILE 030 requiring FILE 080) are STRICTLY FORBIDDEN
+
+WHY THIS MATTERS:
+The file sequence must be executable top-to-bottom. A developer generating files in order must never encounter a situation where FILE N requires FILE M where M > N. This would make the sequence impossible to follow without jumping ahead.
+
+HOW TO SEQUENCE FILES:
+1. Pure config and foundation files always come first (package.json, tsconfig, env, schema)
+2. Types and constants come before anything that uses them
+3. Utilities and lib helpers come before services that use them
+4. Services come before hooks that call them
+5. Hooks come before components that use them
+6. Shared/base components come before feature components that compose them
+7. Page files and API routes come last — they depend on everything else
+8. If two files would naturally depend on each other, extract their shared logic into a third earlier file that both can depend on
+
+REQUIRED FILES field in Section 9:
+- List ONLY files with lower numbers than the current file
+- If a file has no backward dependencies, write: "None"
+- Never leave this field empty — always explicitly state "None" or list the actual lower-numbered files
+- Format: "FILE NNN: path/to/file.ts" — one per line
+
+DESIGN CONSISTENCY DEPENDENCIES — MANDATORY:
+Every file that renders UI must list its closest design siblings as required files. This ensures Claude reads real implemented patterns before writing new code, preventing style drift across the project.
+
+The rule: before generating any component, page, or UI file, Claude must read at least one already-generated file of the same type from the same layer. Specifically:
+
+- A new component in src/components/dashboard/ must list an existing dashboard component as a required file
+- A new component in src/components/workspace/ must list an existing workspace component
+- A new page file must list an existing page file from the same route group
+- A new API route must list an existing API route from the same resource or a similar one
+- A new hook must list an existing hook that follows the same pattern
+- A new service must list an existing service
+- A new CSS module must list an existing CSS module from the same component family
+- A new store must list an existing store file
+
+WHY THIS IS REQUIRED:
+Without reading a sibling file first, Claude invents its own patterns — different className conventions, different state management shapes, different error handling styles, different spacing values. Reading one real sibling file before writing forces Claude to match the exact patterns already established in the codebase.
+
+HOW TO IDENTIFY DESIGN SIBLINGS:
+1. Same folder = strongest sibling (always prefer)
+2. Same phase = strong sibling (same layer of the architecture)
+3. Same file type/extension and similar purpose = valid sibling
+4. For the very first file in a folder with no siblings yet, use the closest file from the parent folder or equivalent layer
+
+This sibling dependency must appear in the REQUIRED FILES list even if the file does not directly import from the sibling. The purpose is context and consistency, not just import resolution.
+
+This ordering rule applies to EVERY file in the sequence. Review the complete file list before assigning numbers to ensure no circular or forward dependencies exist.`
+
+  return `${basePrompt}\n${dependencyRule}`
 }
 
 /**

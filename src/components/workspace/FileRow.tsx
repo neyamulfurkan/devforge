@@ -329,43 +329,41 @@ function GcdPlusCodeButton({
           }
         }
 
-        // ── Assemble the clipboard payload ───────────────────────────────────
+        // ── Assemble required files blocks — each labeled, before the task ──
         const requiredFilesBlock = results
-          .map(
-            (r) =>
-              `// ─── ${r.path} ${'─'.repeat(Math.max(0, 55 - r.path.length))}\n${r.content}`
+          .map((r) =>
+            `${sep}\nREQUIRED FILE: ${r.path} — READ THIS BEFORE GENERATING\n${sep}\n\n${r.content}`
           )
           .join('\n\n')
 
         const missingNote =
           missing.length > 0
-            ? `\n⚠️ Could not find code for:\n${missing.map((p) => `  • ${p}`).join('\n')}\nPlease paste these files manually.\n`
+            ? `\n⚠️ The following required files could not be found on disk or cloud:\n${missing.map((p) => `  • ${p}`).join('\n')}\nReference them by name only if needed — do not guess their contents.\n`
             : ''
 
-        const requiredSection =
+        // Note listing which files were provided — injected at top of FSP
+        const providedFilesNote =
           results.length > 0
-            ? `${sep}
-REQUIRED REFERENCE FILES (${results.length} file${results.length !== 1 ? 's' : ''}) — READ ALL BEFORE WRITING ANY CODE
-${sep}
-
-Study every file below. Match their exports, types, naming conventions, and patterns exactly.
-
-${requiredFilesBlock}
-${missingNote}`
-            : missing.length > 0
-            ? `${sep}
-REQUIRED REFERENCE FILES — NOT FOUND
-${sep}
-${missingNote}`
+            ? `NOTE: The following files have been provided above and you have read them:\n${results.map((r) => `  • ${r.path}`).join('\n')}\nReference them directly for imports, types, hook names, store selectors, and design patterns. Do not guess their shape.`
             : ''
 
+        // ── Final single-prompt structure (CHANGE 1: files before task) ──────
         const combined = `${gcdContent}
+
+${results.length > 0 ? `${requiredFilesBlock}
+
+${missingNote}${sep}
+END REQUIRED FILES. CONTEXT CONFIRMED. GENERATE NOW.
+${sep}` : missing.length > 0 ? `${sep}
+REQUIRED FILES — NOT FOUND ON DISK OR CLOUD
+${sep}
+${missingNote}` : ''}
 
 ${sep}
 TASK: GENERATE FILE ${fileNumber} — ${filePath}
 ${sep}
 
-FILE-SPECIFIC PROMPT:
+${providedFilesNote ? `${providedFilesNote}\n\n` : ''}FILE-SPECIFIC PROMPT:
 
 ${filePrompt}
 
@@ -398,9 +396,8 @@ STRICT RULES:
 - Do NOT add any text after the JSON closing fence
 - Do NOT add introductory text before the code block
 - Do NOT add "I've implemented..." commentary anywhere
-- JSON must be the absolute last thing in your response
-
-${requiredSection}`
+- All required files are provided above. Do not ask for clarification. Do not ask to proceed. Generate immediately.
+- JSON must be the absolute last thing in your response`
 
         await navigator.clipboard.writeText(combined)
         setState('done')
@@ -575,13 +572,35 @@ Or paste any files you'd like me to review first.
 
 Wait for the user's reply before writing any code.`
 
+    // ── Structure: GCD → required file list reminder → task → output format ─
+    // GcdPlusButton has no actual file content (use GcdPlusCodeButton for that)
+    // but it still follows the correct order: context before task.
+    const requiredFilesReminder = requiredFiles.length > 0
+      ? `${sep}
+REQUIRED FILES FOR THIS TASK — YOU MUST OBTAIN THESE BEFORE GENERATING
+${sep}
+
+The following files are required to generate ${filePath} correctly.
+They are listed here so you know exactly what context you need.
+If any are not already in this conversation, ask for them before writing code.
+
+${requiredFiles.map((f) => `  • ${f}`).join('\n')}
+
+Once you have read all required files above, generate immediately without further prompting.
+${sep}
+CONTEXT CONFIRMED. PROCEED TO TASK.
+${sep}`
+      : ''
+
     const combined = `${gcdContent}
+
+${requiredFilesReminder}
 
 ${sep}
 TASK: GENERATE FILE ${fileNumber} — ${filePath}
 ${sep}
 
-FILE-SPECIFIC PROMPT (read STEP 1 first — it governs whether you may write code):
+FILE-SPECIFIC PROMPT:
 
 ${filePrompt}
 
@@ -589,11 +608,11 @@ ${sep}
 OUTPUT FORMAT — YOU MUST FOLLOW THIS EXACTLY:
 ${sep}
 
-Your response must contain ONLY two things in this exact order — nothing else:
+Your entire response must contain ONLY two things in this exact order — nothing else:
 
 1. The complete file code in a single fenced code block. Every function, every handler, every import fully written. No placeholders, no "// TODO", no truncation, no ellipsis.
 
-2. Immediately after the closing fence of the code block, this JSON object on its own — no introduction, no "Here is the JSON", no explanation before or after it:
+2. Immediately after the closing fence of the code block, this JSON object — no introduction, no explanation before or after it:
 
 \`\`\`json
 {
@@ -614,11 +633,9 @@ STRICT RULES — violations will break the automated parser:
 - Do NOT add any text after the closing \`\`\` of the JSON block
 - Do NOT add introductory text before the code block
 - Do NOT add "I've implemented..." or any commentary anywhere
-- The JSON must be the absolute last thing in your response
-
-${beforeYouBeginSection}
-
-${requiredFilesSection}`
+- If all required files are present in this conversation: generate immediately, do not ask to proceed
+- If any required file is missing: ask for only the missing files, then generate immediately once received
+- The JSON must be the absolute last thing in your response`
 
     navigator.clipboard.writeText(combined).then(() => {
       setCopied(true)
