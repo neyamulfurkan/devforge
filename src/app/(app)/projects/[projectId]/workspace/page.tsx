@@ -119,6 +119,82 @@ function EditorLoadingSkeleton(): JSX.Element {
   )
 }
 
+// ─── Shared prompt helpers — 100% identical to FileRow.tsx GcdPlusCodeButton ─
+
+function trimGcdForPhase(gcdContent: string, phase: number): string {
+  const alwaysInclude = new Set(['1', '3', '4', '5', '9', '11'])
+  const phaseAdditional: Record<string, Set<string>> = {
+    foundation: new Set(['2', '6', '10']),
+    services:   new Set(['2']),
+    frontend:   new Set(['7', '8']),
+    api:        new Set(['6', '10']),
+  }
+  const getPhaseGroup = (p: number): string => {
+    if (p <= 2) return 'foundation'
+    if (p <= 5) return 'services'
+    if (p <= 8) return 'frontend'
+    return 'api'
+  }
+  const group = getPhaseGroup(phase)
+  const allowed = new Set([...alwaysInclude, ...(phaseAdditional[group] ?? new Set())])
+  const lines = gcdContent.split('\n')
+  const outputLines: string[] = []
+  let currentSectionAllowed = true
+  let currentSectionNum = ''
+  for (const line of lines) {
+    const sectionMatch = line.match(/^##\s+SECTION\s+(\d+(?:\.\d+)?)/i)
+    if (sectionMatch) {
+      const num = sectionMatch[1] ?? ''
+      currentSectionNum = num.split('.')[0] ?? num
+      currentSectionAllowed = allowed.has(currentSectionNum)
+    }
+    if (currentSectionAllowed) outputLines.push(line)
+  }
+  return outputLines.join('\n')
+}
+
+function getBuildStateForFile(
+  file: { fileNumber: string; filePath: string; phase: number; phaseName: string; status: string },
+  allFiles: Array<{ fileNumber: string; filePath: string; status: string; phase: number; phaseName: string }>
+): string {
+  const completedFiles = allFiles.filter((f) => f.status === 'COMPLETE')
+  const completedCount = completedFiles.length
+  const totalCount = allFiles.length
+  if (completedCount === 0) {
+    return `CURRENT BUILD STATE: Phase ${file.phase} — ${file.phaseName}. No files completed yet. This is the first file being generated.`
+  }
+  const lastCompleted = completedFiles[completedFiles.length - 1]
+  const lastNum = lastCompleted?.fileNumber ?? '000'
+  const lastPath = lastCompleted?.filePath ?? ''
+  const phaseComplete = completedFiles.filter((f) => f.phase === file.phase)
+  const phaseTotal = allFiles.filter((f) => f.phase === file.phase)
+  return `CURRENT BUILD STATE: Phase ${file.phase} — ${file.phaseName}. Files 001–${lastNum} are complete (${completedCount}/${totalCount} total). Phase ${file.phase} progress: ${phaseComplete.length}/${phaseTotal.length} files done. Last completed: ${lastPath}. FILE ${file.fileNumber} (${file.filePath}) is next.`
+}
+
+function extractRegistryEntry(gcdContent: string, filePath: string): string | null {
+  const lines = gcdContent.split('\n')
+  let inSection11 = false
+  let entryLines: string[] = []
+  let capturing = false
+  let braceDepth = 0
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? ''
+    if (/^##\s+SECTION\s+11/i.test(line)) { inSection11 = true; continue }
+    if (inSection11 && /^##\s+SECTION\s+\d+/i.test(line)) { inSection11 = false; break }
+    if (!inSection11) continue
+    if (!capturing && line.includes(filePath)) { capturing = true; entryLines = [line]; continue }
+    if (capturing) {
+      entryLines.push(line)
+      for (const ch of line) {
+        if (ch === '{') braceDepth++
+        if (ch === '}') braceDepth--
+      }
+      if (braceDepth <= 0 && entryLines.some((l) => l.includes('{'))) break
+    }
+  }
+  return entryLines.length > 1 ? entryLines.join('\n') : null
+}
+
 // ─── Next File Bar ────────────────────────────────────────────────────────────
 // Shows the next incomplete file and lets user open + copy its full prompt
 // in one click. Lives above the editor mode switcher.
@@ -156,41 +232,241 @@ function NextFileBar({ projectId }: { projectId: string }): JSX.Element | null {
       // This ensures EditorLayout picks up the file regardless of local/DB mode
       await openFile(nextFile.id)
 
-      // 2 — build the prompt to copy
+      // 2 — build prompt: 100% identical to GcdPlusCodeButton in FileRow.tsx
       const gcd = docData?.rawContent ?? ''
       const fsp = nextFile.filePrompt ?? ''
       const sep = '═'.repeat(60)
+      const thinSep = '─'.repeat(60)
+      const filePath = nextFile.filePath
+      const fileNumber = nextFile.fileNumber
+      const filePhase = nextFile.phase
+      const filePhaseName = nextFile.phaseName
+      const fileStatus = nextFile.status
+      const requiredFiles = nextFile.requiredFiles
 
-      // Fetch required file contents
-      const requiredContents: string[] = []
-      for (const reqRaw of nextFile.requiredFiles) {
-        const reqPath = reqRaw.replace(/^FILE\s+[\w]+:\s*/i, '').trim()
-        const match = files.find((f) => {
-          const norm = f.filePath.replace(/^\/+/, '')
-          const req = reqPath.replace(/^\/+/, '')
-          return norm === req || norm.endsWith('/' + req) || req.endsWith('/' + norm)
+      const cleanPath = (raw: string): string => raw.replace(/^FILE\s+[\w]+:\s*/i, '').trim()
+
+      // Read store state at click time — never stale
+      const storeState = useEditorStore.getState()
+      const liveContent = storeState.fileContent
+      const projectLocalState = storeState.localModeByProject[projectId] ?? {
+        isLocalMode: false, localFileTree: [], openLocalPath: null,
+        openLocalHandle: null, localFolderHandle: null,
+      }
+      const liveTree = projectLocalState.localFileTree
+      const livePath = projectLocalState.openLocalPath
+      const liveLocalMode = projectLocalState.isLocalMode
+
+      // Fetch all project file metadata (for DB fallback + dependent detection)
+      let allProjectFiles: Array<{
+        id: string; filePath: string; fileNumber: string; status: string
+        phase: number; phaseName: string; jsonSummary: Record<string, unknown> | null
+      }> = []
+      try {
+        const listRes = await fetch(`/api/projects/${projectId}/files`)
+        if (listRes.ok) {
+          const listJson = await listRes.json()
+          allProjectFiles = Array.isArray(listJson.data) ? listJson.data : []
+        }
+      } catch { /* DB fallback won't work but local disk still will */ }
+
+      // IMPROVEMENT 1: Phase-trim the GCD
+      const trimmedGcd = trimGcdForPhase(gcd, filePhase)
+
+      // IMPROVEMENT 5: Build state
+      const buildState = getBuildStateForFile(
+        { fileNumber, filePath, phase: filePhase, phaseName: filePhaseName, status: fileStatus },
+        allProjectFiles
+      )
+
+      // IMPROVEMENT 3: CSS module auto-detection
+      const cssModulePath = filePath.endsWith('.tsx')
+        ? filePath.replace(/\.tsx$/, '.module.css') : null
+
+      const allRequiredPaths = [...requiredFiles.map(cleanPath).filter(Boolean)]
+      if (cssModulePath && !allRequiredPaths.includes(cssModulePath)) {
+        const cssMatch = allProjectFiles.find((f) => {
+          const fNorm = f.filePath.replace(/^\/+/, '')
+          const cssNorm = cssModulePath.replace(/^\/+/, '')
+          return fNorm === cssNorm || fNorm.endsWith('/' + cssNorm)
         })
-        if (match) {
-          try {
-            const res = await fetch(`/api/projects/${projectId}/files/${match.id}/code`)
-            if (res.ok) {
-              const json = await res.json()
-              const code: string = json.data?.codeContent ?? ''
-              if (code.trim()) {
-                requiredContents.push(`${sep}\nREQUIRED FILE: ${match.filePath}\n${sep}\n\n${code}`)
-              }
+        if (cssMatch) allRequiredPaths.push(cssModulePath)
+      }
+
+      // Fetch each required file — 3 sources: editor memory, local disk, DB/cloud
+      const results: Array<{ path: string; content: string; source: string; isCss: boolean }> = []
+      const missing: Array<{ path: string; stub: string | null }> = []
+
+      // Local tree walker — identical to GcdPlusCodeButton
+      const findInLocalTree = async (nodes: import('@/store/editorStore').LocalFileNode[], requiredPath: string): Promise<string | null> => {
+        const normalised = requiredPath.replace(/^\/+/, '')
+        const requiredFilename = normalised.split('/').pop() ?? ''
+        for (const node of nodes) {
+          if (node.type === 'file') {
+            const nodePath = node.path.replace(/^\/+/, '')
+            const nodeFilename = nodePath.split('/').pop() ?? ''
+            const isMatch = nodePath === normalised || nodePath.endsWith('/' + normalised) ||
+              normalised.endsWith('/' + nodePath) ||
+              (requiredFilename.length > 5 && nodeFilename === requiredFilename)
+            if (isMatch) {
+              try {
+                const fsHandle = node.handle as FileSystemFileHandle
+                const f = await fsHandle.getFile()
+                const text = await f.text()
+                if (text.trim()) return text
+              } catch { /* stale handle — continue */ }
             }
-          } catch { /* skip */ }
+          }
+          if (node.type === 'folder' && node.children?.length) {
+            const found = await findInLocalTree(node.children, requiredPath)
+            if (found) return found
+          }
+        }
+        return null
+      }
+
+      for (const reqPath of allRequiredPaths) {
+        if (!reqPath) continue
+        let content: string | null = null
+        let source = ''
+        const isCss = reqPath.endsWith('.css') || reqPath.endsWith('.scss')
+
+        // Source 1 — currently open file in editor memory
+        if (livePath && liveContent?.trim()) {
+          const livNorm = livePath.replace(/^\/+/, '')
+          const reqNorm = reqPath.replace(/^\/+/, '')
+          if (livNorm === reqNorm || livNorm.endsWith('/' + reqNorm) || reqNorm.endsWith('/' + livNorm)) {
+            content = liveContent; source = 'editor'
+          }
+        }
+
+        // Source 2 — local disk tree
+        if (!content && liveLocalMode && liveTree.length > 0) {
+          const diskContent = await findInLocalTree(liveTree, reqPath)
+          if (diskContent) { content = diskContent; source = 'disk' }
+        }
+
+        // Source 3 — DB / Cloudinary via API
+        if (!content) {
+          const reqNorm = reqPath.replace(/^\/+/, '')
+          const match = allProjectFiles.find((f) => {
+            const fNorm = f.filePath.replace(/^\/+/, '')
+            return fNorm === reqNorm || fNorm.endsWith('/' + reqNorm) || reqNorm.endsWith('/' + fNorm)
+          })
+          if (match) {
+            try {
+              const codeRes = await fetch(`/api/projects/${projectId}/files/${match.id}/code`)
+              if (codeRes.ok) {
+                const codeJson = await codeRes.json()
+                const fetched: string = codeJson.data?.codeContent ?? ''
+                if (fetched.trim()) { content = fetched; source = 'cloud' }
+              }
+            } catch { /* non-fatal */ }
+          }
+        }
+
+        if (content) {
+          results.push({ path: reqPath, content, source, isCss })
+        } else {
+          // IMPROVEMENT 4: Section 11 stub for missing files
+          const stub = extractRegistryEntry(gcd, reqPath)
+          missing.push({ path: reqPath, stub })
         }
       }
 
-      const combined = [
-        gcd,
-        requiredContents.length > 0 ? requiredContents.join('\n\n') : '',
-        `${sep}\nTASK: GENERATE FILE ${nextFile.fileNumber} — ${nextFile.filePath}\n${sep}`,
-        fsp ? `FILE-SPECIFIC PROMPT:\n\n${fsp}` : '',
-        `${sep}\nOUTPUT: Complete file code only. No placeholders. No truncation.\n${sep}`,
-      ].filter(Boolean).join('\n\n')
+      // IMPROVEMENT 2: Dependent registry entries
+      const dependentEntries: Array<{ fileNum: string; path: string; entry: string }> = []
+      for (const pf of allProjectFiles) {
+        if (pf.filePath === filePath) continue
+        const summary = pf.jsonSummary as Record<string, unknown> | null
+        if (!summary) continue
+        const deps = summary['dependents']
+        if (Array.isArray(deps) && deps.some((d) =>
+          typeof d === 'string' && (d === filePath || d.includes(filePath) || filePath.includes(d))
+        )) {
+          const entry = extractRegistryEntry(gcd, pf.filePath)
+          if (entry) dependentEntries.push({ fileNum: pf.fileNumber, path: pf.filePath, entry })
+        }
+      }
+
+      // Assemble blocks — identical structure to GcdPlusCodeButton
+      const requiredFilesBlock = results
+        .map((r) => {
+          const label = r.isCss
+            ? `REQUIRED FILE: ${r.path} — USE THESE EXACT CLASS NAMES IN YOUR JSX`
+            : `REQUIRED FILE: ${r.path} — READ THIS BEFORE GENERATING`
+          return `${sep}\n${label}\n${sep}\n\n${r.content}`
+        }).join('\n\n')
+
+      const missingBlock = missing.length > 0
+        ? missing.map(({ path, stub }) =>
+            stub
+              ? `${sep}\nREQUIRED FILE: ${path} — FULL CONTENTS NOT PROVIDED\nUse this registry entry as the interface reference:\n${thinSep}\n${stub}\n${thinSep}`
+              : `${sep}\n⚠️ REQUIRED FILE: ${path} — NOT FOUND\nProceed without it. Do not guess its contents.`
+          ).join('\n\n')
+        : ''
+
+      const dependentBlock = dependentEntries.length > 0
+        ? `${sep}\nDEPENDENT FILES — THESE IMPORT FROM THE FILE YOU ARE GENERATING\nTheir registry entries define exactly what interface they expect from you.\n${sep}\n\n${
+            dependentEntries.map((d) => `FILE ${d.fileNum} (${d.path}) expects from ${filePath}:\n${thinSep}\n${d.entry}`).join('\n\n')
+          }\n\n${sep}`
+        : ''
+
+      const providedFilesNote = results.length > 0
+        ? `NOTE: The following files have been provided above and you have read them:\n${results.map((r) => `  • ${r.path}${r.isCss ? ' (CSS module — use exact class names)' : ''}`).join('\n')}\nReference them directly for imports, types, hook names, store selectors, class names, and design patterns. Do not guess their shape.`
+        : ''
+
+      const combined = `${trimmedGcd}
+
+${results.length > 0 || missing.length > 0 ? `${requiredFilesBlock}
+
+${missingBlock}` : ''}
+
+${dependentBlock}
+
+${results.length > 0 || missing.some((m) => m.stub) ? `${sep}\nEND REQUIRED FILES. CONTEXT CONFIRMED. GENERATE NOW.\n${sep}` : ''}
+
+${sep}
+TASK: GENERATE FILE ${fileNumber} — ${filePath}
+${sep}
+
+${buildState}
+
+${providedFilesNote ? `${providedFilesNote}\n\n` : ''}FILE-SPECIFIC PROMPT:
+
+${fsp}
+
+${sep}
+OUTPUT FORMAT — YOU MUST FOLLOW THIS EXACTLY:
+${sep}
+
+Your entire response must contain ONLY two things in this exact order:
+
+1. The complete file code in a single fenced code block. Every function, every handler, every import fully written. No placeholders, no "// TODO", no truncation.
+
+2. Immediately after the closing fence of the code block — this JSON object with no text before or after it:
+
+\`\`\`json
+{
+  "file": "${filePath}",
+  "fileNumber": "${fileNumber}",
+  "exports": ["ExportName — max 3 word description"],
+  "imports": ["package — one reason, omit React/Next/Node built-ins"],
+  "keyLogic": "One sentence. What this file actually does.",
+  "sideEffects": ["one short phrase — omit array if none"],
+  "dependents": ["top 3 files that import this one"],
+  "status": "complete",
+  "generatedAt": "${new Date().toISOString()}"
+}
+\`\`\`
+
+STRICT RULES:
+- Do NOT repeat, quote, or reference the GCD
+- Do NOT add any text after the JSON closing fence
+- Do NOT add introductory text before the code block
+- Do NOT add "I've implemented..." commentary anywhere
+- All required files are provided above. Do not ask for clarification. Do not ask to proceed. Generate immediately.
+- JSON must be the absolute last thing in your response`
 
       await navigator.clipboard.writeText(combined)
       setCopyState('done')
