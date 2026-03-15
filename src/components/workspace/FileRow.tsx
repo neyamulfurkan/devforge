@@ -136,24 +136,155 @@ function RequiredFileChip({ dep }: { dep: string }): JSX.Element {
   )
 }
 
+// ─── GCD trimmer — strips irrelevant sections based on file phase ─────────────
+// Sections always kept: 1 (overview), 3 (stack), 4 (file structure),
+// 5 (coding standards), 9 (generation sequence), 11 (JSON registry)
+// Phase-specific additions:
+//   Frontend components (phases 6-8): + 7 (design system), 8 (performance)
+//   API routes (phase 9):             + 6 (DB schema), 10 (env vars)
+//   Foundation/config (phases 1-2):  + 2 (features), 6 (DB schema), 10 (env)
+//   Services/hooks (phases 3-5):     + 2 (features)
+
+function trimGcdForPhase(gcdContent: string, phase: number): string {
+  // Sections always included regardless of phase
+  const alwaysInclude = new Set(['1', '3', '4', '5', '9', '11'])
+
+  // Additional sections by phase group
+  const phaseAdditional: Record<string, Set<string>> = {
+    foundation: new Set(['2', '6', '10']),   // phases 1-2
+    services:   new Set(['2']),               // phases 3-5
+    frontend:   new Set(['7', '8']),          // phases 6-8
+    api:        new Set(['6', '10']),          // phase 9
+  }
+
+  const getPhaseGroup = (p: number): string => {
+    if (p <= 2) return 'foundation'
+    if (p <= 5) return 'services'
+    if (p <= 8) return 'frontend'
+    return 'api'
+  }
+
+  const group = getPhaseGroup(phase)
+  const allowed = new Set([
+    ...alwaysInclude,
+    ...(phaseAdditional[group] ?? new Set()),
+  ])
+
+  // Split GCD into sections by "## SECTION N" markers
+  // Keep a section if its number is in the allowed set
+  const lines = gcdContent.split('\n')
+  const outputLines: string[] = []
+  let currentSectionAllowed = true
+  let currentSectionNum = ''
+
+  for (const line of lines) {
+    const sectionMatch = line.match(/^##\s+SECTION\s+(\d+(?:\.\d+)?)/i)
+    if (sectionMatch) {
+      const num = sectionMatch[1] ?? ''
+      // Top-level section number (e.g. "6" from "6.1")
+      currentSectionNum = num.split('.')[0] ?? num
+      currentSectionAllowed = allowed.has(currentSectionNum)
+    }
+    if (currentSectionAllowed) {
+      outputLines.push(line)
+    }
+  }
+
+  return outputLines.join('\n')
+}
+
+// ─── Section 11 registry parser ───────────────────────────────────────────────
+// Extracts a specific file's JSON registry entry from Section 11 of the GCD.
+// Returns the raw registry block or null if not found.
+
+function extractRegistryEntry(gcdContent: string, filePath: string): string | null {
+  // Section 11 entries look like: FILE NNN: path\n{ ... json ... }
+  // or wrapped in ```json blocks
+  const lines = gcdContent.split('\n')
+  let inSection11 = false
+  let entryLines: string[] = []
+  let capturing = false
+  let braceDepth = 0
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? ''
+
+    if (/^##\s+SECTION\s+11/i.test(line)) {
+      inSection11 = true
+      continue
+    }
+    if (inSection11 && /^##\s+SECTION\s+\d+/i.test(line)) {
+      inSection11 = false
+      break
+    }
+    if (!inSection11) continue
+
+    // Look for file path match
+    if (!capturing && line.includes(filePath)) {
+      capturing = true
+      entryLines = [line]
+      continue
+    }
+
+    if (capturing) {
+      entryLines.push(line)
+      // Count braces to detect end of JSON block
+      for (const ch of line) {
+        if (ch === '{') braceDepth++
+        if (ch === '}') braceDepth--
+      }
+      // Once we've opened and closed a complete JSON object, stop
+      if (braceDepth <= 0 && entryLines.some((l) => l.includes('{'))) {
+        break
+      }
+    }
+  }
+
+  return entryLines.length > 1 ? entryLines.join('\n') : null
+}
+
+// ─── Build state calculator ───────────────────────────────────────────────────
+// Returns a human-readable build state string for the prompt header.
+
+function getBuildState(
+  file: FileWithContent,
+  allFiles: Array<{ fileNumber: string; filePath: string; status: string; phase: number; phaseName: string }>
+): string {
+  const completedFiles = allFiles.filter((f) => f.status === 'COMPLETE')
+  const completedCount = completedFiles.length
+  const totalCount = allFiles.length
+
+  if (completedCount === 0) {
+    return `CURRENT BUILD STATE: Phase ${file.phase} — ${file.phaseName}. No files completed yet. This is the first file being generated.`
+  }
+
+  const lastCompleted = completedFiles[completedFiles.length - 1]
+  const lastNum = lastCompleted?.fileNumber ?? '000'
+  const lastPath = lastCompleted?.filePath ?? ''
+
+  // Files in the same phase that are complete
+  const phaseComplete = completedFiles.filter((f) => f.phase === file.phase)
+  const phaseTotal = allFiles.filter((f) => f.phase === file.phase)
+
+  return `CURRENT BUILD STATE: Phase ${file.phase} — ${file.phaseName}. Files 001–${lastNum} are complete (${completedCount}/${totalCount} total). Phase ${file.phase} progress: ${phaseComplete.length}/${phaseTotal.length} files done. Last completed: ${lastPath}. FILE ${file.fileNumber} (${file.filePath}) is next.`
+}
+
 // ─── GCD + FSP + Code button ──────────────────────────────────────────────────
-// Copies GCD + file-specific prompt + all required files' actual code.
-//
-// Code source priority per required file:
-//   1. Currently open file in editor store (already in memory — instant)
-//   2. Local disk — walks localFileTree, matches by filename suffix
-//      since tree paths may have a root prefix (e.g. "devforge/src/lib/utils.ts"
-//      vs required path "src/lib/utils.ts")
-//   3. All project files from DB — fetches file list once, matches by filePath,
-//      then fetches code for each matched file
-//
-// Always colorful (indigo/purple gradient) so it stands out from GCD+ button.
+// Implements all 5 prompt quality improvements:
+//   1. Phase-trimmed GCD — only relevant sections per phase
+//   2. Dependent registry entries — tell Claude what interface dependents expect
+//   3. CSS module auto-detection — include .module.css when generating .tsx
+//   4. Section 11 stubs for missing files — no second message needed
+//   5. Build state declaration — tell Claude what's done
 
 function GcdPlusCodeButton({
   gcdContent,
   filePrompt,
   filePath,
   fileNumber,
+  filePhase,
+  filePhaseName,
+  fileStatus,
   requiredFiles,
   projectId,
   compact = false,
@@ -162,6 +293,9 @@ function GcdPlusCodeButton({
   filePrompt: string
   filePath: string
   fileNumber: string
+  filePhase: number
+  filePhaseName: string
+  fileStatus: FileStatus
   requiredFiles: string[]
   projectId: string
   compact?: boolean
@@ -169,7 +303,7 @@ function GcdPlusCodeButton({
   const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [fetchedCount, setFetchedCount] = useState(0)
 
-   const { isLocalMode } = useEditor(projectId)
+  const { isLocalMode } = useEditor(projectId)
 
   // ── Strip "FILE NNN: " prefix and normalise path ──────────────────────────
   const cleanPath = (raw: string): string =>
@@ -236,6 +370,7 @@ function GcdPlusCodeButton({
 
       try {
         const sep = '═'.repeat(60)
+        const thinSep = '─'.repeat(60)
 
         // ── Read store state at click time — never stale ─────────────────────
         const {
@@ -246,7 +381,15 @@ function GcdPlusCodeButton({
         } = useEditorStore.getState()
 
         // ── Fetch all project file metadata once (for DB fallback) ──────────
-        let allProjectFiles: Array<{ id: string; filePath: string }> = []
+        let allProjectFiles: Array<{
+          id: string
+          filePath: string
+          fileNumber: string
+          status: string
+          phase: number
+          phaseName: string
+          jsonSummary: Record<string, unknown> | null
+        }> = []
         try {
           const listRes = await fetch(`/api/projects/${projectId}/files`)
           if (listRes.ok) {
@@ -257,16 +400,45 @@ function GcdPlusCodeButton({
           // DB fallback won't work but local disk still will
         }
 
-        // ── Fetch each required file ─────────────────────────────────────────
-        const results: Array<{ path: string; content: string; source: string }> = []
-        const missing: string[] = []
+        // ── IMPROVEMENT 1: Phase-trim the GCD ────────────────────────────────
+        const trimmedGcd = trimGcdForPhase(gcdContent, filePhase)
 
-        for (const rawDep of requiredFiles) {
-          const reqPath = cleanPath(rawDep)
+        // ── IMPROVEMENT 5: Build state ────────────────────────────────────────
+        const buildState = getBuildState(
+          { fileNumber, filePath, phase: filePhase, phaseName: filePhaseName, status: fileStatus } as FileWithContent,
+          allProjectFiles
+        )
+
+        // ── Fetch each required file ──────────────────────────────────────────
+        const results: Array<{ path: string; content: string; source: string; isCss: boolean }> = []
+        const missing: Array<{ path: string; stub: string | null }> = []
+
+        // ── IMPROVEMENT 3: Auto-detect CSS module for .tsx files ──────────────
+        // If generating a .tsx file, check if a .module.css exists for it
+        const cssModulePath = filePath.endsWith('.tsx')
+          ? filePath.replace(/\.tsx$/, '.module.css')
+          : null
+
+        const allRequiredPaths = [...requiredFiles.map(cleanPath).filter(Boolean)]
+
+        // Add CSS module to fetch list if it exists and isn't already required
+        if (cssModulePath && !allRequiredPaths.includes(cssModulePath)) {
+          const cssMatch = allProjectFiles.find((f) => {
+            const fNorm = f.filePath.replace(/^\/+/, '')
+            const cssNorm = cssModulePath.replace(/^\/+/, '')
+            return fNorm === cssNorm || fNorm.endsWith('/' + cssNorm)
+          })
+          if (cssMatch) {
+            allRequiredPaths.push(cssModulePath)
+          }
+        }
+
+        for (const reqPath of allRequiredPaths) {
           if (!reqPath) continue
 
           let content: string | null = null
           let source = ''
+          const isCss = reqPath.endsWith('.css') || reqPath.endsWith('.scss')
 
           // Source 1 — currently open file in editor (already in memory)
           if (livePath && liveContent?.trim()) {
@@ -322,46 +494,99 @@ function GcdPlusCodeButton({
           }
 
           if (content) {
-            results.push({ path: reqPath, content, source })
+            results.push({ path: reqPath, content, source, isCss })
             setFetchedCount((n) => n + 1)
           } else {
-            missing.push(reqPath)
+            // ── IMPROVEMENT 4: Section 11 stub for missing files ───────────────
+            const stub = extractRegistryEntry(gcdContent, reqPath)
+            missing.push({ path: reqPath, stub })
           }
         }
 
-        // ── Assemble required files blocks — each labeled, before the task ──
+        // ── IMPROVEMENT 2: Dependent registry entries ─────────────────────────
+        // Find files that list filePath in their dependents field
+        // Use Section 11 registry entries to tell Claude what interface they expect
+        const dependentEntries: Array<{ fileNum: string; path: string; entry: string }> = []
+        for (const pf of allProjectFiles) {
+          if (pf.filePath === filePath) continue
+          const summary = pf.jsonSummary as Record<string, unknown> | null
+          if (!summary) continue
+          const deps = summary['dependents']
+          if (
+            Array.isArray(deps) &&
+            deps.some(
+              (d) =>
+                typeof d === 'string' &&
+                (d === filePath || d.includes(filePath) || filePath.includes(d))
+            )
+          ) {
+            const entry = extractRegistryEntry(gcdContent, pf.filePath)
+            if (entry) {
+              dependentEntries.push({
+                fileNum: pf.fileNumber,
+                path: pf.filePath,
+                entry,
+              })
+            }
+          }
+        }
+
+        // ── Assemble required files blocks — labeled, before the task ─────────
         const requiredFilesBlock = results
-          .map((r) =>
-            `${sep}\nREQUIRED FILE: ${r.path} — READ THIS BEFORE GENERATING\n${sep}\n\n${r.content}`
-          )
+          .map((r) => {
+            const label = r.isCss
+              ? `REQUIRED FILE: ${r.path} — USE THESE EXACT CLASS NAMES IN YOUR JSX`
+              : `REQUIRED FILE: ${r.path} — READ THIS BEFORE GENERATING`
+            return `${sep}\n${label}\n${sep}\n\n${r.content}`
+          })
           .join('\n\n')
 
-        const missingNote =
-          missing.length > 0
-            ? `\n⚠️ The following required files could not be found on disk or cloud:\n${missing.map((p) => `  • ${p}`).join('\n')}\nReference them by name only if needed — do not guess their contents.\n`
-            : ''
+        // Missing files with stubs
+        const missingBlock = missing.length > 0
+          ? missing.map(({ path, stub }) =>
+              stub
+                ? `${sep}\nREQUIRED FILE: ${path} — FULL CONTENTS NOT PROVIDED\nUse this registry entry as the interface reference:\n${thinSep}\n${stub}\n${thinSep}`
+                : `${sep}\n⚠️ REQUIRED FILE: ${path} — NOT FOUND\nProceed without it. Do not guess its contents.`
+            ).join('\n\n')
+          : ''
 
-        // Note listing which files were provided — injected at top of FSP
-        const providedFilesNote =
-          results.length > 0
-            ? `NOTE: The following files have been provided above and you have read them:\n${results.map((r) => `  • ${r.path}`).join('\n')}\nReference them directly for imports, types, hook names, store selectors, and design patterns. Do not guess their shape.`
-            : ''
-
-        // ── Final single-prompt structure (CHANGE 1: files before task) ──────
-        const combined = `${gcdContent}
-
-${results.length > 0 ? `${requiredFilesBlock}
-
-${missingNote}${sep}
-END REQUIRED FILES. CONTEXT CONFIRMED. GENERATE NOW.
-${sep}` : missing.length > 0 ? `${sep}
-REQUIRED FILES — NOT FOUND ON DISK OR CLOUD
+        // Dependent interface block
+        const dependentBlock = dependentEntries.length > 0
+          ? `${sep}
+DEPENDENT FILES — THESE IMPORT FROM THE FILE YOU ARE GENERATING
+Their registry entries define exactly what interface they expect from you.
 ${sep}
-${missingNote}` : ''}
+
+${dependentEntries.map((d) =>
+  `FILE ${d.fileNum} (${d.path}) expects from ${filePath}:\n${thinSep}\n${d.entry}`
+).join('\n\n')}
+
+${sep}`
+          : ''
+
+        // Note listing which files were provided
+        const providedFilesNote = results.length > 0
+          ? `NOTE: The following files have been provided above and you have read them:\n${results.map((r) => `  • ${r.path}${r.isCss ? ' (CSS module — use exact class names)' : ''}`).join('\n')}\nReference them directly for imports, types, hook names, store selectors, class names, and design patterns. Do not guess their shape.`
+          : ''
+
+        // ── Final single-prompt structure ─────────────────────────────────────
+        const combined = `${trimmedGcd}
+
+${results.length > 0 || missing.length > 0 ? `${requiredFilesBlock}
+
+${missingBlock}` : ''}
+
+${dependentBlock}
+
+${results.length > 0 || missing.some((m) => m.stub) ? `${sep}
+END REQUIRED FILES. CONTEXT CONFIRMED. GENERATE NOW.
+${sep}` : ''}
 
 ${sep}
 TASK: GENERATE FILE ${fileNumber} — ${filePath}
 ${sep}
+
+${buildState}
 
 ${providedFilesNote ? `${providedFilesNote}\n\n` : ''}FILE-SPECIFIC PROMPT:
 
@@ -392,7 +617,7 @@ Your entire response must contain ONLY two things in this exact order:
 \`\`\`
 
 STRICT RULES:
-- Do NOT repeat, quote, or reference the GCD or Section 9
+- Do NOT repeat, quote, or reference the GCD
 - Do NOT add any text after the JSON closing fence
 - Do NOT add introductory text before the code block
 - Do NOT add "I've implemented..." commentary anywhere
@@ -1244,6 +1469,9 @@ export const FileRow = memo(function FileRow({
                     filePrompt={file.filePrompt!}
                     filePath={file.filePath}
                     fileNumber={file.fileNumber}
+                    filePhase={file.phase}
+                    filePhaseName={file.phaseName}
+                    fileStatus={file.status}
                     requiredFiles={file.requiredFiles}
                     projectId={projectId}
                   />
