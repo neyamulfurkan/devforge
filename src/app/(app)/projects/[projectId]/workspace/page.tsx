@@ -16,7 +16,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 
 // 4b. Additional icon imports for EditorLayout
-import { FolderOpen, FolderDown, Loader2, CheckCircle2 } from 'lucide-react'
+import { FolderOpen, FolderDown, Loader2, CheckCircle2, ChevronRight, Sparkles, Copy, Check } from 'lucide-react'
 
 // 5. Internal imports — workspace components
 import { WorkspaceNav } from '@/components/workspace/WorkspaceNav'
@@ -33,6 +33,8 @@ import { EditorTopBar } from '@/components/workspace/EditorTopBar'
 import { useProject } from '@/hooks/useProject'
 import { useErrors } from '@/hooks/useErrors'
 import { useEditor } from '@/hooks/useEditor'
+import { useFiles } from '@/hooks/useFiles'
+import { useDocument } from '@/hooks/useDocument'
 import { useProjectStore } from '@/store/projectStore'
 import { useEditorStore } from '@/store/editorStore'
 import type { WorkspaceTab, FileWithContent } from '@/types'
@@ -113,6 +115,164 @@ function EditorLoadingSkeleton(): JSX.Element {
           ))}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Next File Bar ────────────────────────────────────────────────────────────
+// Shows the next incomplete file and lets user open + copy its full prompt
+// in one click. Lives above the editor mode switcher.
+
+function NextFileBar({ projectId }: { projectId: string }): JSX.Element | null {
+  const { files } = useFiles(projectId)
+  const { document: docData } = useDocument(projectId)
+  const { openFile } = useEditor(projectId)
+  const [copyState, setCopyState] = React.useState<'idle' | 'loading' | 'done'>('idle')
+
+  // Find the next file to work on: first EMPTY, then CODE_PASTED, ordered by fileNumber
+  const nextFile = React.useMemo(() => {
+    const incomplete = files
+      .filter((f) => f.status !== 'COMPLETE')
+      .sort((a, b) => {
+        // Sort by numeric part of fileNumber first, then string
+        const aNum = parseInt(a.fileNumber.replace(/\D/g, ''), 10)
+        const bNum = parseInt(b.fileNumber.replace(/\D/g, ''), 10)
+        if (aNum !== bNum) return aNum - bNum
+        return a.fileNumber.localeCompare(b.fileNumber)
+      })
+    return incomplete[0] ?? null
+  }, [files])
+
+  const completedCount = files.filter((f) => f.status === 'COMPLETE').length
+  const totalCount = files.length
+  const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
+
+  const handleOpenAndCopy = React.useCallback(async () => {
+    if (!nextFile || copyState === 'loading') return
+    setCopyState('loading')
+
+    try {
+      // 1 — open the file in the editor
+      await openFile(nextFile.id)
+
+      // 2 — build the prompt to copy
+      const gcd = docData?.rawContent ?? ''
+      const fsp = nextFile.filePrompt ?? ''
+      const sep = '═'.repeat(60)
+
+      // Fetch required file contents
+      const requiredContents: string[] = []
+      for (const reqRaw of nextFile.requiredFiles) {
+        const reqPath = reqRaw.replace(/^FILE\s+[\w]+:\s*/i, '').trim()
+        const match = files.find((f) => {
+          const norm = f.filePath.replace(/^\/+/, '')
+          const req = reqPath.replace(/^\/+/, '')
+          return norm === req || norm.endsWith('/' + req) || req.endsWith('/' + norm)
+        })
+        if (match) {
+          try {
+            const res = await fetch(`/api/projects/${projectId}/files/${match.id}/code`)
+            if (res.ok) {
+              const json = await res.json()
+              const code: string = json.data?.codeContent ?? ''
+              if (code.trim()) {
+                requiredContents.push(`${sep}\nREQUIRED FILE: ${match.filePath}\n${sep}\n\n${code}`)
+              }
+            }
+          } catch { /* skip */ }
+        }
+      }
+
+      const combined = [
+        gcd,
+        requiredContents.length > 0 ? requiredContents.join('\n\n') : '',
+        `${sep}\nTASK: GENERATE FILE ${nextFile.fileNumber} — ${nextFile.filePath}\n${sep}`,
+        fsp ? `FILE-SPECIFIC PROMPT:\n\n${fsp}` : '',
+        `${sep}\nOUTPUT: Complete file code only. No placeholders. No truncation.\n${sep}`,
+      ].filter(Boolean).join('\n\n')
+
+      await navigator.clipboard.writeText(combined)
+      setCopyState('done')
+      setTimeout(() => setCopyState('idle'), 3000)
+    } catch {
+      setCopyState('idle')
+    }
+  }, [nextFile, copyState, openFile, docData, files, projectId])
+
+  if (!nextFile) {
+    // All files complete
+    return (
+      <div className="flex h-9 flex-shrink-0 items-center gap-2 border-b border-[var(--status-complete)]/20 bg-[var(--status-complete-bg)] px-3">
+        <CheckCircle2 className="h-3.5 w-3.5 text-[var(--status-complete)]" />
+        <span className="text-xs font-medium text-[var(--status-complete)]">
+          All {totalCount} files complete!
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-10 flex-shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-primary)] px-3">
+      {/* Progress fraction */}
+      <span className="text-[10px] font-mono text-[var(--text-tertiary)] flex-shrink-0 hidden sm:inline">
+        {completedCount}/{totalCount}
+      </span>
+
+      {/* Thin progress bar */}
+      <div className="hidden sm:block w-16 h-1 rounded-full bg-[var(--bg-quaternary)] flex-shrink-0 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-[var(--accent-primary)] transition-all duration-300"
+          style={{ width: `${progressPct}%` }}
+        />
+      </div>
+
+      <ChevronRight className="h-3 w-3 text-[var(--text-tertiary)] flex-shrink-0 hidden sm:block" />
+
+      {/* Next file label */}
+      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+        <span className="text-[10px] font-mono text-[var(--text-tertiary)] flex-shrink-0">
+          Next:
+        </span>
+        <span className="text-xs font-mono text-[var(--text-primary)] truncate">
+          <span className="text-[var(--text-tertiary)]">{nextFile.fileNumber}</span>
+          {' — '}
+          {nextFile.filePath}
+        </span>
+        {nextFile.filePrompt ? (
+          <span className="hidden md:inline text-[10px] px-1.5 py-0.5 rounded bg-[var(--accent-light)] text-[var(--accent-primary)] flex-shrink-0">
+            has prompt
+          </span>
+        ) : (
+          <span className="hidden md:inline text-[10px] px-1.5 py-0.5 rounded bg-[var(--bg-quaternary)] text-[var(--text-tertiary)] flex-shrink-0">
+            no prompt
+          </span>
+        )}
+      </div>
+
+      {/* Main action button */}
+      <button
+        type="button"
+        onClick={handleOpenAndCopy}
+        disabled={copyState === 'loading'}
+        className={cn(
+          'flex-shrink-0 flex items-center gap-1.5 h-7 px-3 rounded-md text-xs font-medium transition-all duration-150',
+          copyState === 'done'
+            ? 'bg-[var(--status-complete-bg)] border border-[var(--status-complete)]/40 text-[var(--status-complete)]'
+            : copyState === 'loading'
+            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white opacity-80 cursor-wait'
+            : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white shadow-sm hover:shadow-md active:scale-95'
+        )}
+        title="Open this file in editor and copy GCD + prompt + required files to clipboard"
+      >
+        {copyState === 'loading' ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : copyState === 'done' ? (
+          <Check className="h-3 w-3" />
+        ) : (
+          <Sparkles className="h-3 w-3" />
+        )}
+        {copyState === 'loading' ? 'Copying…' : copyState === 'done' ? 'Copied! File open' : 'Open + Copy Prompt'}
+      </button>
     </div>
   )
 }
@@ -749,6 +909,8 @@ export default function WorkspacePage(): JSX.Element {
       case 'editor':
         return (
           <div className="flex flex-1 flex-col overflow-hidden">
+            {/* Next file workflow bar */}
+            <NextFileBar projectId={projectId} />
             {/* Mode switcher bar */}
             <EditorModeSwitcher projectId={projectId} />
             <div className="flex flex-1 overflow-hidden">
