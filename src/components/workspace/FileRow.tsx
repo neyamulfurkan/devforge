@@ -960,29 +960,28 @@ export const FileRow = memo(function FileRow({
           {statusCfg.label}
         </span>
 
-        {/* ── Hover action buttons ─────────────────────────────────────────── */}
+        {/* ── Hover action buttons — max 3, icon-only, well spaced ─────────── */}
         <div
           onClick={(e) => e.stopPropagation()}
-          className="hidden group-hover:flex items-center gap-1.5 flex-shrink-0"
+          className="hidden group-hover:flex items-center gap-3 flex-shrink-0"
         >
-          {/* Copy file path */}
-          <CopyButton
-            value={file.filePath}
-            size="sm"
-            className="h-7 w-7 rounded-md border border-[var(--border-default)] bg-[var(--bg-quaternary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--border-emphasis)]"
-          />
-
-          {/* Copy prompt */}
+          {/* Copy FSP — most used single action */}
           {hasPrompt && (
-            <CopyButton
-              value={file.filePrompt!}
-              size="sm"
-              label="Prompt"
-              className="h-7 px-2 rounded-md border border-[var(--border-default)] bg-[var(--bg-quaternary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--border-emphasis)] text-[11px]"
-            />
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                navigator.clipboard.writeText(file.filePrompt!).catch(() => undefined)
+              }}
+              title="Copy file-specific prompt"
+              className="h-7 px-2.5 flex items-center gap-1.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-quaternary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--border-emphasis)] text-[11px] font-medium transition-all duration-150"
+            >
+              <Copy className="h-3 w-3" />
+              FSP
+            </button>
           )}
 
-          {/* GCD + prompt */}
+          {/* GCD + Prompt — primary generation button */}
           {hasPrompt && hasGcd && (
             <GcdPlusButton
               gcdContent={docData!.rawContent}
@@ -990,19 +989,6 @@ export const FileRow = memo(function FileRow({
               filePath={file.filePath}
               fileNumber={file.fileNumber}
               requiredFiles={file.requiredFiles}
-              compact
-            />
-          )}
-
-          {/* GCD + FSP + required file codes from disk */}
-          {hasPrompt && hasGcd && hasRequiredFiles && (
-            <GcdPlusCodeButton
-              gcdContent={docData!.rawContent}
-              filePrompt={file.filePrompt!}
-              filePath={file.filePath}
-              fileNumber={file.fileNumber}
-              requiredFiles={file.requiredFiles}
-              projectId={projectId}
               compact
             />
           )}
@@ -1016,9 +1002,6 @@ export const FileRow = memo(function FileRow({
           >
             <FolderOpen className="h-3.5 w-3.5" />
           </button>
-
-          {/* Cloud sync — Push/Pull/View/Paste */}
-          <CloudSyncButton file={file} projectId={projectId} />
         </div>
 
         {/* Phase — far right, hidden on hover */}
@@ -1099,49 +1082,72 @@ export const FileRow = memo(function FileRow({
             </ExpandSection>
           )}
 
-          {/* Action row */}
-          <div className="flex items-center gap-2 pt-0.5 flex-wrap">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={(e) => { e.stopPropagation(); onSelect?.(file.id) }}
-              className="h-7 px-3 text-xs gap-1.5 border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--border-emphasis)] hover:text-[var(--text-primary)]"
-            >
-              <FolderOpen className="h-3.5 w-3.5" />
-              Open in Editor
-            </Button>
+          {/* Action row — grouped with dividers */}
+          <div className="flex flex-wrap items-center gap-y-2 pt-1">
 
-            {hasPrompt && (
-              <CopyButton
-                value={file.filePrompt!}
+            {/* Group 1 — Editor */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
                 size="sm"
-                label="Copy FSP"
+                onClick={(e) => { e.stopPropagation(); onSelect?.(file.id) }}
+                className="h-7 px-3 text-xs gap-1.5 border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--border-emphasis)] hover:text-[var(--text-primary)]"
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+                Open in Editor
+              </Button>
+
+              {/* Copy file path */}
+              <CopyButton
+                value={file.filePath}
+                size="sm"
+                label="Copy Path"
                 className="h-7 px-3 rounded-md border border-[var(--border-default)] bg-transparent text-[var(--text-secondary)] hover:border-[var(--border-emphasis)] hover:text-[var(--text-primary)] text-xs"
               />
+            </div>
+
+            {/* Divider */}
+            {hasPrompt && (
+              <div className="mx-3 h-5 w-px bg-[var(--border-subtle)] flex-shrink-0" />
             )}
 
-            {hasPrompt && hasGcd && (
-              <GcdPlusButton
-                gcdContent={docData!.rawContent}
-                filePrompt={file.filePrompt!}
-                filePath={file.filePath}
-                fileNumber={file.fileNumber}
-                requiredFiles={file.requiredFiles}
-              />
+            {/* Group 2 — Prompt copy actions */}
+            {hasPrompt && (
+              <div className="flex items-center gap-2">
+                <CopyButton
+                  value={file.filePrompt!}
+                  size="sm"
+                  label="Copy FSP"
+                  className="h-7 px-3 rounded-md border border-[var(--border-default)] bg-transparent text-[var(--text-secondary)] hover:border-[var(--border-emphasis)] hover:text-[var(--text-primary)] text-xs"
+                />
+
+                {hasGcd && (
+                  <GcdPlusButton
+                    gcdContent={docData!.rawContent}
+                    filePrompt={file.filePrompt!}
+                    filePath={file.filePath}
+                    fileNumber={file.fileNumber}
+                    requiredFiles={file.requiredFiles}
+                  />
+                )}
+
+                {hasGcd && hasRequiredFiles && (
+                  <GcdPlusCodeButton
+                    gcdContent={docData!.rawContent}
+                    filePrompt={file.filePrompt!}
+                    filePath={file.filePath}
+                    fileNumber={file.fileNumber}
+                    requiredFiles={file.requiredFiles}
+                    projectId={projectId}
+                  />
+                )}
+              </div>
             )}
 
-            {hasPrompt && hasGcd && hasRequiredFiles && (
-              <GcdPlusCodeButton
-                gcdContent={docData!.rawContent}
-                filePrompt={file.filePrompt!}
-                filePath={file.filePath}
-                fileNumber={file.fileNumber}
-                requiredFiles={file.requiredFiles}
-                projectId={projectId}
-              />
-            )}
+            {/* Divider */}
+            <div className="mx-3 h-5 w-px bg-[var(--border-subtle)] flex-shrink-0" />
 
-            {/* Cloud sync actions — always available in expanded panel */}
+            {/* Group 3 — Cloud sync */}
             <CloudSyncButton file={file} projectId={projectId} />
           </div>
 
