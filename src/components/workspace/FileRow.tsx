@@ -17,9 +17,11 @@ import { CopyButton } from '@/components/shared/CopyButton'
 import { useFiles } from '@/hooks/useFiles'
 import { useDocument } from '@/hooks/useDocument'
 import { useEditor } from '@/hooks/useEditor'
+import { useEditorStore } from '@/store/editorStore'
 
 // 6. Internal imports — types
 import type { FileWithContent, FileStatus } from '@/types'
+import type { LocalFileNode } from '@/store/editorStore'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -130,6 +132,247 @@ function RequiredFileChip({ dep }: { dep: string }): JSX.Element {
         : <Copy className="h-3 w-3 flex-shrink-0 opacity-50" />
       }
       {copied ? 'Copied!' : label}
+    </button>
+  )
+}
+
+// ─── GCD + Prompt + Code button ──────────────────────────────────────────────
+// Reads required files from local disk first, falls back to cloud/DB.
+// Assembles GCD + FSP + all required file contents into one clipboard paste.
+
+function GcdPlusCodeButton({
+  gcdContent,
+  filePrompt,
+  filePath,
+  fileNumber,
+  requiredFiles,
+  projectId,
+  compact = false,
+}: {
+  gcdContent: string
+  filePrompt: string
+  filePath: string
+  fileNumber: string
+  requiredFiles: string[]
+  projectId: string
+  compact?: boolean
+}): JSX.Element {
+  const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const { isLocalMode } = useEditor(projectId)
+  const { localFileTree } = useEditorStore()
+
+  // Recursively find a file node in the local tree by path
+  const findLocalNode = useCallback(
+    (nodes: LocalFileNode[], targetPath: string): LocalFileNode | null => {
+      for (const node of nodes) {
+        if (node.type === 'file' && node.path === targetPath) return node
+        if (node.type === 'folder' && node.children) {
+          const found = findLocalNode(node.children, targetPath)
+          if (found) return found
+        }
+      }
+      return null
+    },
+    []
+  )
+
+  // Fetch content for a single required file path.
+  // Priority: local disk → Cloudinary/DB API
+  const fetchRequiredFileContent = useCallback(
+    async (rawDep: string): Promise<{ path: string; content: string } | null> => {
+      // Strip "FILE NNN: " prefix if present
+      const path = rawDep.replace(/^FILE\s+[\w]+:\s*/i, '').trim()
+      if (!path) return null
+
+      // 1 — Try local disk first (fastest, zero network)
+      if (isLocalMode && localFileTree.length > 0) {
+        const node = findLocalNode(localFileTree, path)
+        if (node && node.type === 'file') {
+          try {
+            const f = await (node.handle as FileSystemFileHandle).getFile()
+            const text = await f.text()
+            if (text.trim()) return { path, content: text }
+          } catch {
+            // Fall through to API
+          }
+        }
+      }
+
+      // 2 — Fall back to Cloudinary/DB via API
+      // We need the fileId — fetch the file list metadata
+      try {
+        const listRes = await fetch(`/api/projects/${projectId}/files?path=${encodeURIComponent(path)}`)
+        if (listRes.ok) {
+          const listJson = await listRes.json()
+          const fileId: string | undefined =
+            Array.isArray(listJson.data)
+              ? listJson.data.find(
+                  (f: { filePath: string; id: string }) => f.filePath === path
+                )?.id
+              : undefined
+
+          if (fileId) {
+            const codeRes = await fetch(`/api/projects/${projectId}/files/${fileId}/code`)
+            if (codeRes.ok) {
+              const codeJson = await codeRes.json()
+              const content: string = codeJson.data?.codeContent ?? ''
+              if (content.trim()) return { path, content }
+            }
+          }
+        }
+      } catch {
+        // Non-fatal — file just won't be included
+      }
+
+      return null
+    },
+    [isLocalMode, localFileTree, projectId, findLocalNode]
+  )
+
+  const handleClick = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (state === 'loading') return
+      setState('loading')
+
+      try {
+        const sep = '═'.repeat(60)
+        const thinSep = '─'.repeat(60)
+
+        // Fetch all required file contents in parallel
+        const fetchedFiles = await Promise.all(
+          requiredFiles.map((dep) => fetchRequiredFileContent(dep))
+        )
+        const availableFiles = fetchedFiles.filter(
+          (f): f is { path: string; content: string } => f !== null
+        )
+        const missingPaths = requiredFiles
+          .map((dep) => dep.replace(/^FILE\s+[\w]+:\s*/i, '').trim())
+          .filter((p) => !availableFiles.find((f) => f.path === p))
+
+        // Build required files section
+        const requiredFilesBlock =
+          availableFiles.length > 0
+            ? availableFiles
+                .map(
+                  (f) =>
+                    `// FILE: ${f.path}\n${thinSep}\n${f.content}`
+                )
+                .join('\n\n')
+            : ''
+
+        const missingNote =
+          missingPaths.length > 0
+            ? `\nNOTE — The following required files could not be found on disk or cloud:\n${missingPaths.map((p) => `  - ${p}`).join('\n')}\nPlease share them manually if Claude needs them.\n`
+            : ''
+
+        const requiredSection =
+          availableFiles.length > 0 || missingPaths.length > 0
+            ? `${sep}
+REQUIRED REFERENCE FILES — READ THESE BEFORE WRITING ANY CODE
+${sep}
+
+These files are provided for context. Study their exports, types, and patterns before generating FILE ${fileNumber}.
+
+${requiredFilesBlock}${missingNote}`
+            : ''
+
+        const combined = `${gcdContent}
+
+${sep}
+TASK: GENERATE FILE ${fileNumber} — ${filePath}
+${sep}
+
+FILE-SPECIFIC PROMPT:
+
+${filePrompt}
+
+${sep}
+OUTPUT FORMAT — YOU MUST FOLLOW THIS EXACTLY:
+${sep}
+
+1. Output the COMPLETE file implementation — every function, every handler, every import fully written. No placeholders, no "// TODO", no truncation.
+
+2. Immediately after the code block, output this JSON — no commentary before or after it, it must be the last thing in your response:
+
+\`\`\`json
+{
+  "file": "${filePath}",
+  "fileNumber": "${fileNumber}",
+  "exports": ["Name — 3 words max description"],
+  "imports": ["package — reason, skip React/Next/built-ins"],
+  "keyLogic": "Max 1 sentence. Core behaviour only.",
+  "sideEffects": ["one short phrase — omit if none"],
+  "dependents": ["top 3 direct importers only"],
+  "status": "complete",
+  "generatedAt": "${new Date().toISOString()}"
+}
+\`\`\`
+
+DO NOT add anything after the JSON block. No explanations, no summaries, no "I've implemented..." commentary.
+
+${requiredSection}`
+
+        await navigator.clipboard.writeText(combined)
+        setState('done')
+        setTimeout(() => setState('idle'), 2000)
+      } catch {
+        setState('error')
+        setTimeout(() => setState('idle'), 2000)
+      }
+    },
+    [
+      state,
+      gcdContent,
+      filePrompt,
+      filePath,
+      fileNumber,
+      requiredFiles,
+      fetchRequiredFileContent,
+    ]
+  )
+
+  const base = `
+    inline-flex items-center gap-1.5 border transition-all duration-150 select-none font-medium
+    ${state === 'done'
+      ? 'border-[var(--status-complete)]/40 bg-[var(--status-complete-bg)] text-[var(--status-complete)]'
+      : state === 'error'
+      ? 'border-[var(--status-error)]/40 bg-[var(--status-error-bg)] text-[var(--status-error)]'
+      : 'border-[var(--accent-border)] bg-[var(--accent-light)] text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-white'
+    }
+  `
+
+  const icon =
+    state === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
+    state === 'done'    ? <Check className="h-3 w-3" /> :
+                          <Copy className="h-3 w-3" />
+
+  const label =
+    state === 'loading' ? 'Reading…' :
+    state === 'done'    ? 'Copied!' :
+    state === 'error'   ? 'Error' :
+    compact             ? 'GCD+Code' : 'Copy GCD + FSP + Code'
+
+  return compact ? (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={state === 'loading'}
+      title="Copy GCD + file prompt + all required file codes from disk"
+      className={`${base} h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap`}
+    >
+      {icon}
+      {label}
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={state === 'loading'}
+      className={`${base} h-7 px-3 rounded-md text-xs`}
+    >
+      {icon}
+      {label}
     </button>
   )
 }
@@ -256,23 +499,32 @@ ${sep}
 OUTPUT FORMAT — YOU MUST FOLLOW THIS EXACTLY:
 ${sep}
 
-1. Output the COMPLETE file implementation — every function, every handler, every import fully written. No placeholders, no "// TODO", no truncation.
+Your response must contain ONLY two things in this exact order — nothing else:
 
-2. Immediately after the code block, output this JSON — no commentary before or after it, it must be the last thing in your response:
+1. The complete file code in a single fenced code block. Every function, every handler, every import fully written. No placeholders, no "// TODO", no truncation, no ellipsis.
+
+2. Immediately after the closing fence of the code block, this JSON object on its own — no introduction, no "Here is the JSON", no explanation before or after it:
 
 \`\`\`json
 {
   "file": "${filePath}",
   "fileNumber": "${fileNumber}",
-  "exports": ["Name — 3 words max description"],
-  "imports": ["package — reason, skip React/Next/built-ins"],
-  "keyLogic": "Max 1 sentence. Core behaviour only.",
-  "sideEffects": ["one short phrase — omit if none"],
-  "dependents": ["top 3 direct importers only"],
+  "exports": ["ExportName — max 3 word description"],
+  "imports": ["package — one reason, omit React/Next/Node built-ins"],
+  "keyLogic": "One sentence maximum. What this file actually does.",
+  "sideEffects": ["one short phrase per side effect — omit array if none"],
+  "dependents": ["top 3 files that import this one — omit if unknown"],
   "status": "complete",
   "generatedAt": "${new Date().toISOString()}"
 }
 \`\`\`
+
+STRICT RULES — violations will break the automated parser:
+- Do NOT repeat, summarise, or quote any part of the GCD or Section 9
+- Do NOT add any text after the closing \`\`\` of the JSON block
+- Do NOT add introductory text before the code block
+- Do NOT add "I've implemented..." or any commentary anywhere
+- The JSON must be the absolute last thing in your response
 
 ${beforeYouBeginSection}
 
@@ -742,6 +994,19 @@ export const FileRow = memo(function FileRow({
             />
           )}
 
+          {/* GCD + FSP + required file codes from disk */}
+          {hasPrompt && hasGcd && hasRequiredFiles && (
+            <GcdPlusCodeButton
+              gcdContent={docData!.rawContent}
+              filePrompt={file.filePrompt!}
+              filePath={file.filePath}
+              fileNumber={file.fileNumber}
+              requiredFiles={file.requiredFiles}
+              projectId={projectId}
+              compact
+            />
+          )}
+
           {/* Open in editor */}
           <button
             type="button"
@@ -862,6 +1127,17 @@ export const FileRow = memo(function FileRow({
                 filePath={file.filePath}
                 fileNumber={file.fileNumber}
                 requiredFiles={file.requiredFiles}
+              />
+            )}
+
+            {hasPrompt && hasGcd && hasRequiredFiles && (
+              <GcdPlusCodeButton
+                gcdContent={docData!.rawContent}
+                filePrompt={file.filePrompt!}
+                filePath={file.filePath}
+                fileNumber={file.fileNumber}
+                requiredFiles={file.requiredFiles}
+                projectId={projectId}
               />
             )}
 
