@@ -22,7 +22,25 @@ interface AddErrorSessionProps {
   onAdded: () => void
 }
 
-type InputMode = 'standard' | 'tsc'
+type InputMode = 'standard' | 'tsc' | 'auto'
+
+const AUTO_FIX_PROMPT = `You are reviewing error logs from a Next.js TypeScript codebase. Identify which files need to be read to fix ALL errors shown.
+
+Respond with ONLY this JSON — no prose:
+
+\`\`\`json
+{
+  "files": ["exact/path/from/project/root.ts"],
+  "reason": "one sentence"
+}
+\`\`\`
+
+RULES:
+- Maximum 15 files — prioritize files with most errors
+- Use exact paths as shown in the error output
+- NO text before or after the JSON
+
+Here are the error logs:`
 
 const ERROR_TYPE_OPTIONS = [
   { value: 'TYPESCRIPT', label: 'TypeScript' },
@@ -38,9 +56,80 @@ export function AddErrorSession({ projectId, onAdded }: AddErrorSessionProps): J
   const [inputMode, setInputMode] = useState<InputMode>('standard')
   const [tscOutput, setTscOutput] = useState('')
   const [isTscSubmitting, setIsTscSubmitting] = useState(false)
+  const [autoOutput, setAutoOutput] = useState('')
+  const [autoCopiedPrompt, setAutoCopiedPrompt] = useState(false)
+  const [autoCopiedFiles, setAutoCopiedFiles] = useState(false)
+  const [autoParsedFiles, setAutoParsedFiles] = useState<string[]>([])
+  const [autoFileListInput, setAutoFileListInput] = useState('')
+  const [autoFileListError, setAutoFileListError] = useState<string | null>(null)
 
   // 8b. External hooks
   const { addSession, addTscSession, parseTscOutput } = useErrors(projectId)
+
+  const handleAutoCopyPrompt = useCallback(async () => {
+    if (!autoOutput.trim()) return
+    await navigator.clipboard.writeText(AUTO_FIX_PROMPT + '\n\n' + autoOutput.trim())
+    setAutoCopiedPrompt(true)
+    setTimeout(() => setAutoCopiedPrompt(false), 2500)
+  }, [autoOutput])
+
+  const handleAutoParseFileList = useCallback((raw: string) => {
+    setAutoFileListInput(raw)
+    if (!raw.trim()) { setAutoParsedFiles([]); setAutoFileListError(null); return }
+    try {
+      const fenceStart = raw.indexOf('```')
+      let jsonStr = raw.trim()
+      if (fenceStart !== -1) {
+        const afterFence = raw.indexOf('\n', fenceStart) + 1
+        const closeFence = raw.indexOf('```', afterFence)
+        jsonStr = closeFence !== -1 ? raw.slice(afterFence, closeFence).trim() : raw.slice(afterFence).trim()
+      }
+      const data = JSON.parse(jsonStr) as unknown
+      if (typeof data !== 'object' || data === null) throw new Error('Must be a JSON object')
+      const filesArr = (data as Record<string, unknown>).files
+      if (!Array.isArray(filesArr)) throw new Error('Response must have a "files" array')
+      if (!filesArr.every((f) => typeof f === 'string')) throw new Error('All files must be strings')
+      setAutoParsedFiles((filesArr as string[]).slice(0, 15))
+      setAutoFileListError(null)
+    } catch (e) {
+      setAutoParsedFiles([])
+      setAutoFileListError(e instanceof Error ? e.message : 'Invalid format')
+    }
+  }, [])
+
+  const handleAutoCopyFiles = useCallback(async () => {
+    if (autoParsedFiles.length === 0) return
+    const sep = '='.repeat(60)
+    const blocks = autoParsedFiles.map((f) => `${sep}\nFILE: ${f}\n${sep}\n[PASTE THE COMPLETE FILE CODE HERE]`).join('\n\n')
+    const fixPrompt = [
+      '',
+      '',
+      sep,
+      'NOW PROVIDE FIXES',
+      sep,
+      '',
+      'You have read all the files above. Provide ALL fixes as a JSON array.',
+      'Paste the array directly — no prose, no markdown fences around the array itself:',
+      '',
+      '[',
+      '  {',
+      '    "file": "exact/path/from/project/root.ts",',
+      '    "search": "unique 1-4 line anchor that appears ONLY ONCE in the file — copy exactly",',
+      '    "replace": "complete replacement — no placeholders, no truncation, fully written"',
+      '  }',
+      ']',
+      '',
+      'CRITICAL RULES:',
+      '- search must be 1-4 lines MAXIMUM',
+      '- search must appear EXACTLY ONCE in the file',
+      '- replace must be 100% complete code — no // ...existing code..., no // TODO',
+      '- Fix every error shown in the logs above',
+      '- ONLY the JSON array — nothing else',
+    ].join('\n')
+    await navigator.clipboard.writeText('Here are the files you requested:\n\n' + blocks + fixPrompt)
+    setAutoCopiedFiles(true)
+    setTimeout(() => setAutoCopiedFiles(false), 2500)
+  }, [autoParsedFiles])
 
   const {
     register,
@@ -67,6 +156,10 @@ export function AddErrorSession({ projectId, onAdded }: AddErrorSessionProps): J
     setIsOpen(false)
     setInputMode('standard')
     setTscOutput('')
+    setAutoOutput('')
+    setAutoParsedFiles([])
+    setAutoFileListInput('')
+    setAutoFileListError(null)
     reset()
   }, [reset])
 
@@ -165,6 +258,18 @@ export function AddErrorSession({ projectId, onAdded }: AddErrorSessionProps): J
         >
           <span className="font-mono">npx tsc --noEmit</span> output
         </button>
+        <button
+          type="button"
+          onClick={() => setInputMode('auto')}
+          className={cn(
+            'flex-1 rounded-lg border py-2 px-3 text-xs font-medium transition-colors',
+            inputMode === 'auto'
+              ? 'border-[var(--accent-primary)] bg-[var(--accent-light)] text-[var(--accent-primary)]'
+              : 'border-[var(--border-default)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'
+          )}
+        >
+          ⚡ Auto Fix
+        </button>
       </div>
 
       {/* ── TSC mode ── */}
@@ -247,6 +352,118 @@ src/components/workspace/ErrorSessionCard.tsx(18,3): error TS7006: Parameter 'se
                   Generate TSC Fix Prompts
                 </>
               )}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Auto Fix mode ── */}
+      {inputMode === 'auto' && (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--text-secondary)] block">
+              Step 1 — Paste ALL error logs (TypeScript, build, runtime, console — any format)
+            </label>
+            <textarea
+              value={autoOutput}
+              onChange={(e) => setAutoOutput(e.target.value)}
+              rows={8}
+              className={cn(
+                'w-full rounded-md border bg-[var(--bg-input)] text-[var(--text-primary)]',
+                'text-xs font-mono placeholder:text-[var(--text-tertiary)]',
+                'border-[var(--border-default)] focus:border-[var(--accent-primary)]',
+                'focus:ring-1 focus:ring-[var(--accent-light)] outline-none',
+                'transition-colors duration-150 resize-y p-3 min-h-[160px]'
+              )}
+              placeholder={'src/hooks/useEditor.ts(42,7): error TS2345: ...\nsrc/components/Button.tsx(18,3): error TS7006: ...\n\nOr paste build errors, runtime errors — any format works'}
+            />
+            {autoOutput.trim().length > 10 && (
+              <p className="text-xs text-[var(--text-tertiary)]">
+                {autoOutput.trim().split('\n').filter(Boolean).length} lines detected
+              </p>
+            )}
+          </div>
+
+          {autoOutput.trim().length > 10 && (
+            <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 space-y-2">
+              <p className="text-xs font-semibold text-[var(--text-secondary)]">Step 2 — Ask Claude which files to review</p>
+              <p className="text-xs text-[var(--text-tertiary)]">Copies your errors + a prompt. Paste into Claude — Claude will reply with a file list.</p>
+              <button
+                type="button"
+                onClick={handleAutoCopyPrompt}
+                className={cn(
+                  'w-full flex items-center justify-center gap-2 h-8 rounded-lg text-xs font-medium border transition-all duration-150',
+                  autoCopiedPrompt
+                    ? 'bg-[var(--status-complete-bg)] border-[var(--status-complete)]/40 text-[var(--status-complete)]'
+                    : 'border-[var(--accent-border)] bg-[var(--accent-light)] text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-white'
+                )}
+              >
+                {autoCopiedPrompt ? '✓ Copied — paste into Claude' : '📋 Copy Errors + File-Request Prompt'}
+              </button>
+            </div>
+          )}
+
+          {autoOutput.trim().length > 10 && (
+            <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 space-y-2">
+              <p className="text-xs font-semibold text-[var(--text-secondary)]">Step 3 — Paste Claude's file list response</p>
+              <textarea
+                value={autoFileListInput}
+                onChange={(e) => handleAutoParseFileList(e.target.value)}
+                rows={4}
+                className={cn(
+                  'w-full rounded-md border px-3 py-2 font-mono text-xs resize-none',
+                  'bg-[var(--bg-input)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]',
+                  'outline-none transition-colors duration-150 focus:ring-1',
+                  autoFileListError && autoFileListInput.trim()
+                    ? 'border-[var(--status-error)] focus:ring-[var(--status-error)]'
+                    : autoParsedFiles.length > 0
+                    ? 'border-[var(--status-complete)] focus:ring-[var(--status-complete)]'
+                    : 'border-[var(--border-default)] focus:border-[var(--accent-primary)] focus:ring-[var(--accent-primary)]'
+                )}
+                placeholder="Paste Claude's JSON response here…"
+              />
+              {autoFileListError && autoFileListInput.trim() && (
+                <p className="text-xs text-[var(--status-error)]">{autoFileListError}</p>
+              )}
+              {autoParsedFiles.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs text-[var(--status-complete)] font-medium">
+                    {autoParsedFiles.length} file{autoParsedFiles.length !== 1 ? 's' : ''} identified
+                  </p>
+                  {autoParsedFiles.map((f, i) => (
+                    <p key={i} className="text-xs font-mono text-[var(--accent-primary)] truncate">• {f}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {autoParsedFiles.length > 0 && (
+            <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 space-y-2">
+              <p className="text-xs font-semibold text-[var(--text-secondary)]">Step 4 — Copy file template + fix prompt</p>
+              <p className="text-xs text-[var(--text-tertiary)]">
+                Copies a template for all {autoParsedFiles.length} files + the fix instruction. Paste each file's code, send to Claude. Claude responds with a JSON array you paste into Auto Apply Fixes.
+              </p>
+              <button
+                type="button"
+                onClick={handleAutoCopyFiles}
+                className={cn(
+                  'w-full flex items-center justify-center gap-2 h-8 rounded-lg text-xs font-medium transition-all duration-150',
+                  autoCopiedFiles
+                    ? 'bg-[var(--status-complete-bg)] border border-[var(--status-complete)]/40 text-[var(--status-complete)]'
+                    : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white active:scale-95'
+                )}
+              >
+                {autoCopiedFiles
+                  ? `✓ Copied ${autoParsedFiles.length} file template`
+                  : `⚡ Copy ${autoParsedFiles.length} File Template + Fix Prompt`}
+              </button>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-1">
+            <Button type="button" variant="ghost" size="sm" onClick={handleCancel} className="h-9 text-sm">
+              Close
             </Button>
           </div>
         </div>

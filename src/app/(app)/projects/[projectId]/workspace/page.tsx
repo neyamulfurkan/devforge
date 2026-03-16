@@ -1438,7 +1438,12 @@ const [copiedFiles, setCopiedFiles] = React.useState(false)
     }
     try {
       // Extract JSON array from response — handles ```json fences or raw array
-      const fenceMatch = input.match(/```(?:json)?\s*([\s\S]*?)```/)
+      const fenceStart = input.indexOf('```')
+      const fenceMatch: [null, string] | null = fenceStart !== -1 ? [null, (() => {
+        const afterFence = input.indexOf('\n', fenceStart) + 1
+        const closeFence = input.indexOf('```', afterFence)
+        return closeFence !== -1 ? input.slice(afterFence, closeFence).trim() : input.slice(afterFence).trim()
+      })()] : null
       const jsonStr = fenceMatch ? fenceMatch[1] : input.trim()
       const data = JSON.parse(jsonStr) as unknown
       if (!Array.isArray(data)) throw new Error('Response must be a JSON array')
@@ -1464,8 +1469,13 @@ const [copiedFiles, setCopiedFiles] = React.useState(false)
       return
     }
     try {
-      const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/)
-      const jsonStr = fenceMatch ? fenceMatch[1] : raw.trim()
+      const fenceStart2 = raw.indexOf('```')
+      let jsonStr: string = raw.trim()
+      if (fenceStart2 !== -1) {
+        const afterFence2 = raw.indexOf('\n', fenceStart2) + 1
+        const closeFence2 = raw.indexOf('```', afterFence2)
+        jsonStr = closeFence2 !== -1 ? raw.slice(afterFence2, closeFence2).trim() : raw.slice(afterFence2).trim()
+      }
       const data = JSON.parse(jsonStr) as unknown
       if (typeof data !== 'object' || data === null || !Array.isArray((data as Record<string, unknown>).files)) {
         throw new Error('Response must have a "files" array')
