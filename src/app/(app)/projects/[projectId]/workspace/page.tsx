@@ -1394,14 +1394,13 @@ Other rules:
 - NO text before or after the JSON array
 - NO explanation of what you changed
 
-IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON — it handles all special characters safely:
-
-FILE: exact/path/from/project/root.ts
-SEARCH:
-exact code to find
-REPLACE:
-new code
----
+CRITICAL JSON ESCAPING RULES — ALWAYS USE JSON, NEVER SWITCH TO PLAIN-TEXT:
+- ALL responses must be a single JSON array — no exceptions, no mixed formats
+- Backticks in search/replace values must be escaped as \\` in the JSON string
+- Newlines in search/replace values must be escaped as \\n in the JSON string
+- Backslashes must be escaped as \\\\ in the JSON string
+- Never output a plain-text FILE:/SEARCH:/REPLACE:/--- block — the parser cannot read it
+- The entire response must be parseable by JSON.parse() — test mentally before responding
 
 Now describe the bug:`,
 
@@ -1435,14 +1434,13 @@ Other rules:
 - One entry per change location — multiple entries for multiple files or spots
 - NO prose, NO explanation — ONLY the JSON array
 
-IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
-
-FILE: exact/path/from/project/root.ts
-SEARCH:
-exact code to find
-REPLACE:
-new code
----
+CRITICAL JSON ESCAPING RULES — ALWAYS USE JSON, NEVER SWITCH TO PLAIN-TEXT:
+- ALL responses must be a single JSON array — no exceptions, no mixed formats
+- Backticks in search/replace values must be escaped as \\` in the JSON string
+- Newlines in search/replace values must be escaped as \\n in the JSON string
+- Backslashes must be escaped as \\\\ in the JSON string
+- Never output a plain-text FILE:/SEARCH:/REPLACE:/--- block — the parser cannot read it
+- The entire response must be parseable by JSON.parse() — test mentally before responding
 
 Describe the feature modification:`,
 
@@ -1473,14 +1471,13 @@ COMPLETENESS RULES — NEVER break anything:
 - Never guess types or variable names — only use what you see in the provided files
 - NO explanation — ONLY the JSON array
 
-IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
-
-FILE: exact/path/from/project/root.ts
-SEARCH:
-exact code to find
-REPLACE:
-new code
----
+CRITICAL JSON ESCAPING RULES — ALWAYS USE JSON, NEVER SWITCH TO PLAIN-TEXT:
+- ALL responses must be a single JSON array — no exceptions, no mixed formats
+- Backticks in search/replace values must be escaped as \\` in the JSON string
+- Newlines in search/replace values must be escaped as \\n in the JSON string
+- Backslashes must be escaped as \\\\ in the JSON string
+- Never output a plain-text FILE:/SEARCH:/REPLACE:/--- block — the parser cannot read it
+- The entire response must be parseable by JSON.parse() — test mentally before responding
 
 Describe the feature to add:`,
 
@@ -1510,14 +1507,13 @@ COMPLETENESS RULES — NEVER break anything:
 - Never omit closing brackets, braces, or tags
 - NO explanation — ONLY the JSON array
 
-IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
-
-FILE: exact/path/from/project/root.ts
-SEARCH:
-exact code to find
-REPLACE:
-new code
----
+CRITICAL JSON ESCAPING RULES — ALWAYS USE JSON, NEVER SWITCH TO PLAIN-TEXT:
+- ALL responses must be a single JSON array — no exceptions, no mixed formats
+- Backticks in search/replace values must be escaped as \\` in the JSON string
+- Newlines in search/replace values must be escaped as \\n in the JSON string
+- Backslashes must be escaped as \\\\ in the JSON string
+- Never output a plain-text FILE:/SEARCH:/REPLACE:/--- block — the parser cannot read it
+- The entire response must be parseable by JSON.parse() — test mentally before responding
 
 Describe what to refactor:`,
 
@@ -1547,14 +1543,13 @@ COMPLETENESS RULES — NEVER break anything:
 - Never guess types — only use types visible in the provided files
 - NO explanation — ONLY the JSON array
 
-IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
-
-FILE: exact/path/from/project/root.ts
-SEARCH:
-exact code to find
-REPLACE:
-new code
----
+CRITICAL JSON ESCAPING RULES — ALWAYS USE JSON, NEVER SWITCH TO PLAIN-TEXT:
+- ALL responses must be a single JSON array — no exceptions, no mixed formats
+- Backticks in search/replace values must be escaped as \\` in the JSON string
+- Newlines in search/replace values must be escaped as \\n in the JSON string
+- Backslashes must be escaped as \\\\ in the JSON string
+- Never output a plain-text FILE:/SEARCH:/REPLACE:/--- block — the parser cannot read it
+- The entire response must be parseable by JSON.parse() — test mentally before responding
 
 Paste the TypeScript error output:`,
 }
