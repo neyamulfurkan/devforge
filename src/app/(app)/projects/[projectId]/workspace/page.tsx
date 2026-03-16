@@ -16,7 +16,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 
 // 4b. Additional icon imports for EditorLayout
-import { FolderOpen, FolderDown, Loader2, CheckCircle2, ChevronRight, Sparkles, Check, Wand2, Bug, Plus, GitBranch, Copy, CheckCheck, XCircle, AlertCircle, FileEdit } from 'lucide-react'
+import { FolderOpen, FolderDown, Loader2, CheckCircle2, ChevronRight, Sparkles, Check, Wand2, Bug, Plus, GitBranch, Copy, CheckCheck, XCircle, AlertCircle, FileEdit, ChevronDown } from 'lucide-react'
 
 // 5. Internal imports — workspace components
 import { WorkspaceNav } from '@/components/workspace/WorkspaceNav'
@@ -980,6 +980,9 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
   const [jsonModalOpen, setJsonModalOpen] = React.useState(false)
   const [jsonModalFilePath, setJsonModalFilePath] = React.useState('')
 
+  // Apply Fixes panel state
+  const [applyFixesOpen, setApplyFixesOpen] = React.useState(false)
+
   const handleEditorMount = useCallback(
     (api: { runFindReplace: () => void; runFind: () => void }) => {
       findReplaceRef.current = api.runFindReplace
@@ -1025,13 +1028,47 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
       prefilledFilePath={jsonModalFilePath}
     />
     <div className="flex h-full w-full overflow-hidden">
-      {/* Left: File tree */}
+      {/* Left: File tree + Apply Fixes panel */}
       <div className="hidden w-60 shrink-0 border-r border-[var(--border-subtle)] md:flex md:flex-col">
-        <EditorFileTree
-          projectId={projectId}
-          onFind={() => findRef.current?.()}
-          onFindReplace={() => findReplaceRef.current?.()}
-        />
+        {/* File tree — takes remaining space */}
+        <div className={cn('flex flex-col overflow-hidden', applyFixesOpen ? 'flex-1 min-h-0' : 'flex-1')}>
+          <EditorFileTree
+            projectId={projectId}
+            onFind={() => findRef.current?.()}
+            onFindReplace={() => findReplaceRef.current?.()}
+          />
+        </div>
+
+        {/* Apply Fixes collapsible panel — pinned to bottom of file tree */}
+        <div className="flex-shrink-0 border-t border-[var(--border-subtle)]">
+          {/* Toggle header */}
+          <button
+            type="button"
+            onClick={() => setApplyFixesOpen((v) => !v)}
+            className={cn(
+              'w-full flex items-center justify-between px-3 py-2 text-xs font-medium transition-colors duration-150',
+              applyFixesOpen
+                ? 'bg-[var(--accent-light)] text-[var(--accent-primary)]'
+                : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]'
+            )}
+          >
+            <div className="flex items-center gap-1.5">
+              <FileEdit className="h-3 w-3" />
+              <span>Auto Apply Fixes</span>
+            </div>
+            {applyFixesOpen
+              ? <ChevronDown className="h-3 w-3" />
+              : <ChevronRight className="h-3 w-3 rotate-90" />
+            }
+          </button>
+
+          {/* Panel body */}
+          {applyFixesOpen && (
+            <div className="flex flex-col max-h-[480px] overflow-y-auto bg-[var(--bg-primary)]">
+              <ApplyFixesView projectId={projectId} compact />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Center + Top: Editor with pinned top bar */}
@@ -1186,7 +1223,7 @@ RULES:
 Paste the TypeScript error output:`,
 }
 
-function ApplyFixesView({ projectId }: { projectId: string }): JSX.Element {
+function ApplyFixesView({ projectId, compact = false }: { projectId: string; compact?: boolean }): JSX.Element {
   const { getLocalState } = useEditorStore()
   const [input, setInput] = React.useState('')
   const [results, setResults] = React.useState<ApplyFixesResult[]>([])
@@ -1325,17 +1362,19 @@ function ApplyFixesView({ projectId }: { projectId: string }): JSX.Element {
   const failedCount = results.filter((r) => r.status !== 'applied').length
 
   return (
-    <div className="flex flex-col gap-5 p-4 max-w-4xl mx-auto">
-      {/* Header */}
-      <div>
-        <h2 className="text-base font-semibold text-[var(--text-primary)] flex items-center gap-2">
-          <FileEdit className="h-4 w-4 text-[var(--accent-primary)]" />
-          Auto Apply Fixes
-        </h2>
-        <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-          Copy a prompt below → paste into Claude → copy Claude's response → paste here → DevForge applies all changes automatically to your local files.
-        </p>
-      </div>
+    <div className={cn('flex flex-col', compact ? 'gap-3 p-2' : 'gap-5 p-4 max-w-4xl mx-auto')}>
+      {/* Header — hidden in compact mode (toggle button serves as header) */}
+      {!compact && (
+        <div>
+          <h2 className="text-base font-semibold text-[var(--text-primary)] flex items-center gap-2">
+            <FileEdit className="h-4 w-4 text-[var(--accent-primary)]" />
+            Auto Apply Fixes
+          </h2>
+          <p className="text-sm text-[var(--text-secondary)] mt-0.5">
+            Copy a prompt below → paste into Claude → copy Claude's response → paste here → DevForge applies all changes automatically to your local files.
+          </p>
+        </div>
+      )}
 
       {/* Prompt buttons */}
       <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-4 space-y-3">
@@ -1943,8 +1982,6 @@ export default function WorkspacePage(): JSX.Element {
       case 'setup':
         return (
           <div className="flex-1 overflow-y-auto">
-            <ApplyFixesView projectId={projectId} />
-            <div className="border-t border-[var(--border-subtle)] mx-4" />
             <SetupView projectId={projectId} />
           </div>
         )

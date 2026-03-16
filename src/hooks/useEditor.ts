@@ -347,19 +347,14 @@ export function useEditor(projectId: string) {
         return
       }
 
-      // Permission granted — restore handle and tree silently.
-      // Do NOT call switchToLocalMode here — let the user see the linked
-      // folder in the switcher bar and choose to use it. This prevents
-      // auto-hijacking the editor on every page load.
+      // Permission granted — restore handle, walk tree, and always switch
+      // to local mode. Zustand resets on every page reload so isLocalMode
+      // is always false after refresh — we cannot rely on it as a guard.
+      // IndexedDB having a saved handle IS the signal the user wants local mode.
       setLocalFolderHandle(projectId, savedHandle)
       const tree = await walkDirectory(savedHandle)
       setLocalFileTree(projectId, tree)
-      // Only switch to local mode if the user was previously in local mode
-      // (i.e. they had a file open). Check by seeing if openLocalPath exists.
-      const existingState = getProjectLocalState(projectId)
-      if (existingState.isLocalMode || existingState.openLocalPath) {
-        switchToLocalMode(projectId)
-      }
+      switchToLocalMode(projectId)
     } catch {
       // Handle may be stale (folder deleted/moved) — clear it
       await clearHandleForProject(projectId)
