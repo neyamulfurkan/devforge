@@ -179,6 +179,58 @@ export function useEditor(projectId: string) {
   // ── DB-mode: save file ────────────────────────────────────────────────────
 
   const saveCurrentFile = useCallback(async () => {
+    if (!openFileId || isSavingRef.current) return
+
+    isSavingRef.current = true
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/files/${openFileId}/code`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ codeContent: fileContent, content: fileContent }),
+        }
+      )
+      if (!res.ok) throw new Error('Failed to save file')
+      markClean()
+
+      // After DB save, also write to local disk if a local folder is linked.
+      // Covers the case where the user opened a file via the DB file list
+      // so openLocalHandle is null but a matching local file exists on disk.
+      const { localFileTree, isLocalMode: currentIsLocalMode } = getProjectLocalState(projectId)
+      if (currentIsLocalMode && localFileTree.length > 0 && currentFile) {
+        const findHandle = (
+          nodes: LocalFileNode[],
+          targetPath: string
+        ): FileSystemFileHandle | null => {
+          for (const node of nodes) {
+            if (node.type === 'file' && node.path === targetPath) {
+              return node.handle as FileSystemFileHandle
+            }
+            if (node.type === 'folder' && node.children) {
+              const found = findHandle(node.children, targetPath)
+              if (found) return found
+            }
+          }
+          return null
+        }
+        const handle = findHandle(localFileTree, currentFile.filePath)
+        if (handle) {
+          try {
+            const writable = await handle.createWritable()
+            await writable.write(fileContent)
+            await writable.close()
+          } catch {
+            // Non-fatal — local write is best-effort
+          }
+        }
+      }
+    } finally {
+      isSavingRef.current = false
+    }
+  }, [isLocalMode, openFileId, projectId, fileContent, markClean, currentFile])
+
+  const saveCurrentFile = useCallback(async () => {
     // In local mode, DB save is still needed to keep cloud in sync
     // (local disk save is handled separately by saveLocalFile)
     if (!openFileId || isSavingRef.current) return
