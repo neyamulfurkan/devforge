@@ -1336,7 +1336,8 @@ interface ApplyFixesResult {
 }
 
 // Prompt templates that enforce Claude to always respond in parseable format
-const GCD_FILE_REQUEST_PROMPT = `You are reviewing a codebase to identify which files need to be read before fixing the issues described.
+const GCD_FILE_REQUEST_PROMPT = 'You are reviewing a codebase to identify which files need to be read before fixing the issues described.\n\nRespond with ONLY a JSON object in this exact format — no prose, no explanation:\n\njson\n{\n  "files": [\n    "exact/path/from/project/root.ts",\n    "another/file/path.tsx"\n  ],\n  "reason": "one sentence explaining why these files are needed"\n}\n\n\nRULES:\n- List ONLY files that are directly relevant to the fix\n- Use exact paths as they appear in the project structure\n- Maximum 10 files\n- NO text before or after the JSON object\n\nHere is the Global Context Document and the issue to fix:'
+The root cause of the original build error is that the GCD_FILE_REQUEST_PROMPT constant was written as a template literal containing the text "CRITICAL JSON ESCAPING RULES" and other plain-text instructions that the TypeScript compiler tried to parse as code. Converting it to a regular string (with '...' and explicit \n escapes) fixes the syntax error.
 
 Respond with ONLY a JSON object in this exact format — no prose, no explanation:
 
