@@ -286,10 +286,15 @@ export function QuickPromptsPanel() {
   const [viewMode, setViewMode] = useState<'list' | 'buttons'>('list')
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 })
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH)
+  const [panelHeight, setPanelHeight] = useState<number | null>(null)
   const [isMaximized, setIsMaximized] = useState(false)
+  const [isCompact, setIsCompact] = useState(false)
   const isResizing = useRef(false)
   const resizeStartX = useRef(0)
   const resizeStartWidth = useRef(0)
+  const isResizingY = useRef(false)
+  const resizeStartY = useRef(0)
+  const resizeStartHeight = useRef(0)
 
   useLayoutEffect(() => {
     const update = () =>
@@ -353,12 +358,46 @@ export function QuickPromptsPanel() {
   const toggleMaximize = useCallback(() => {
     if (isMaximized) {
       setPanelWidth(PANEL_DEFAULT_WIDTH)
+      setPanelHeight(null)
       setIsMaximized(false)
     } else {
       setPanelWidth(PANEL_MAX_WIDTH)
+      setPanelHeight(600)
       setIsMaximized(true)
     }
   }, [isMaximized])
+
+  const toggleCompact = useCallback(() => {
+    setIsCompact((v) => !v)
+    setPanelHeight(null)
+  }, [])
+
+  const onResizeYStart = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      e.stopPropagation()
+      isResizingY.current = true
+      resizeStartY.current = e.clientY
+      const current = panelRef.current?.getBoundingClientRect().height ?? 300
+      resizeStartHeight.current = current
+      ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    },
+    []
+  )
+
+  const onResizeYMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!isResizingY.current) return
+      const dy = e.clientY - resizeStartY.current
+      const newHeight = Math.max(120, Math.min(700, resizeStartHeight.current + dy))
+      setPanelHeight(newHeight)
+    },
+    []
+  )
+
+  const onResizeYEnd = useCallback(() => {
+    isResizingY.current = false
+  }, [])
 
   const onDragStart = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -448,6 +487,7 @@ export function QuickPromptsPanel() {
               top: resolvedY,
               zIndex: 9998,
               width: panelCollapsed ? PANEL_COLLAPSED_WIDTH : panelWidth,
+              height: panelCollapsed ? undefined : isCompact ? 'auto' : panelHeight ?? undefined,
               willChange: 'transform',
             }}
             className={cn(
@@ -506,6 +546,20 @@ export function QuickPromptsPanel() {
                     ) : (
                       <List className="w-3 h-3" />
                     )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleCompact}
+                    aria-label={isCompact ? 'Expand content' : 'Compact mode'}
+                    title={isCompact ? 'Expand content' : 'Compact mode — show less'}
+                    className={cn(
+                      'flex items-center justify-center w-5 h-5 rounded-md transition-colors duration-150',
+                      isCompact
+                        ? 'text-[var(--accent-primary)] bg-[var(--accent-light)]'
+                        : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-quaternary)]'
+                    )}
+                  >
+                    <GripVertical className="w-3 h-3" />
                   </button>
                   <button
                     type="button"
@@ -594,7 +648,10 @@ export function QuickPromptsPanel() {
                   </div>
                 ) : viewMode === 'list' ? (
                   <div className="flex flex-col">
-                    <div className="px-3 pt-2.5 pb-1 flex flex-col gap-1.5 max-h-[440px] overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--border-default)] scrollbar-track-transparent">
+                    <div className={cn(
+                      'px-3 pt-2.5 pb-1 flex flex-col gap-1.5 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--border-default)] scrollbar-track-transparent',
+                      isCompact ? 'max-h-[160px]' : panelHeight ? `max-h-[${panelHeight - 80}px]` : 'max-h-[440px]'
+                    )}>
                       <AnimatePresence mode="popLayout">
                         {pinnedPrompts.map((prompt) => (
                           <PromptRow
@@ -650,7 +707,10 @@ export function QuickPromptsPanel() {
                   </div>
                 ) : (
                   <div className="flex flex-col">
-                    <div className="px-3 pt-2.5 pb-1 grid grid-cols-2 gap-1.5 max-h-[440px] overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--border-default)] scrollbar-track-transparent">
+                    <div className={cn(
+                      'px-3 pt-2.5 pb-1 grid grid-cols-2 gap-1.5 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--border-default)] scrollbar-track-transparent',
+                      isCompact ? 'max-h-[160px]' : panelHeight ? `max-h-[${panelHeight - 80}px]` : 'max-h-[440px]'
+                    )}>
                       <AnimatePresence mode="popLayout">
                         {pinnedPrompts.map((prompt) => (
                           <PromptButton
@@ -712,9 +772,23 @@ export function QuickPromptsPanel() {
                 onPointerUp={onResizeEnd}
                 onPointerCancel={onResizeEnd}
                 className="absolute top-0 right-0 w-3 h-full cursor-ew-resize flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-150 group/resize z-10"
-                title="Drag to resize"
+                title="Drag to resize width"
               >
                 <div className="w-0.5 h-8 rounded-full bg-[var(--accent-primary)]/40 group-hover/resize:bg-[var(--accent-primary)] transition-colors duration-150" />
+              </div>
+            )}
+
+            {/* Bottom-edge drag-to-resize handle */}
+            {!panelCollapsed && !isCompact && (
+              <div
+                onPointerDown={onResizeYStart}
+                onPointerMove={onResizeYMove}
+                onPointerUp={onResizeYEnd}
+                onPointerCancel={onResizeYEnd}
+                className="absolute bottom-0 left-0 w-full h-3 cursor-ns-resize flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-150 group/resizey z-10"
+                title="Drag to resize height"
+              >
+                <div className="h-0.5 w-8 rounded-full bg-[var(--accent-primary)]/40 group-hover/resizey:bg-[var(--accent-primary)] transition-colors duration-150" />
               </div>
             )}
 
