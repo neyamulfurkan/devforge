@@ -983,7 +983,7 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
   // Apply Fixes panel state
   const [applyFixesOpen, setApplyFixesOpen] = React.useState(false)
   const [splitMode, setSplitMode] = React.useState(false)
-  const [applyFixesHeight, setApplyFixesHeight] = React.useState(240)
+  const [applyFixesHeight, setApplyFixesHeight] = React.useState(200)
 
   // Sidebar width — resizable via drag handle
   const [sidebarWidth, setSidebarWidth] = React.useState(240)
@@ -1036,7 +1036,7 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
       {/* Left: File tree + Apply Fixes panel — resizable + split mode */}
       <div
         style={{ width: sidebarWidth }}
-        className="hidden shrink-0 border-r border-[var(--border-subtle)] md:flex md:flex-col relative bg-[var(--bg-secondary)] overflow-hidden"
+        className="hidden shrink-0 border-r border-[var(--border-subtle)] md:flex md:flex-col relative bg-[var(--bg-secondary)] overflow-hidden h-full"
       >
         {/* Right-edge width resize handle */}
         <div
@@ -1062,9 +1062,9 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
         </div>
 
         {splitMode ? (
-          <div className="flex flex-col w-full h-full overflow-hidden">
+          <div className="flex flex-col w-full h-full overflow-hidden" style={{ position: 'absolute', inset: 0 }}>
             <div
-              className="flex flex-col overflow-hidden flex-shrink-0"
+              className="flex flex-col overflow-hidden"
               style={{ height: `calc(100% - ${applyFixesHeight}px - 6px)`, minHeight: 120 }}
             >
               <EditorFileTree
