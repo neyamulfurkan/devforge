@@ -1,6 +1,8 @@
 'use client'
+// ActivityFeed — renders a scrollable list of recent project activity entries
 
 // 3. Third-party library imports
+// Icons: each maps to a specific activity type in ACTIVITY_CONFIG
 import {
   CheckSquare,
   AlertCircle,
@@ -11,15 +13,18 @@ import {
 } from 'lucide-react'
 
 // 4. Internal imports — UI components
+// Card/Badge/ScrollArea from shadcn/ui — no custom wrappers needed here
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 
 // 6. Internal imports — utils, types
+// formatRelativeTime: converts Date to '2 hours ago' style string
 import { formatRelativeTime, cn } from '@/lib/utils'
 import type { ActivityEntry, ActivityType } from '@/types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+// maxItems defaults to 10 — matches GCD Section 2.2 activity feed spec
 
 interface ActivityFeedProps {
   activities: ActivityEntry[]
@@ -27,6 +32,7 @@ interface ActivityFeedProps {
 }
 
 // ─── Icon + color config per activity type ────────────────────────────────────
+// Lookup table avoids switch statements in the render path
 
 const ACTIVITY_CONFIG: Record<
   ActivityType,
@@ -60,8 +66,11 @@ const ACTIVITY_CONFIG: Record<
 }
 
 // ─── Sub-component: activity row ─────────────────────────────────────────────
+// Kept separate so ActivityFeed render stays clean and flat
 
+// TEST COMMENT 2 — second replacement confirmed
 function ActivityRow({ entry }: { entry: ActivityEntry }): JSX.Element {
+  // config is guaranteed non-null — ActivityType enum is exhaustive in ACTIVITY_CONFIG
   const config = ACTIVITY_CONFIG[entry.type]
   const Icon = config.icon
 
@@ -97,8 +106,11 @@ function ActivityRow({ entry }: { entry: ActivityEntry }): JSX.Element {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
+// Slices to maxItems before render — never sorts, caller is responsible for order
 
+// TEST COMMENT 1 — auto apply is working
 export function ActivityFeed({ activities, maxItems = 10 }: ActivityFeedProps): JSX.Element {
+  // ScrollArea only activates when list exceeds 5 items — avoids scroll on short feeds
   const visible = activities.slice(0, maxItems)
 
   return (

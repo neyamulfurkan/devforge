@@ -1258,6 +1258,7 @@ function ApplyFixesView({ projectId, compact = false }: { projectId: string; com
   const [parseError, setParseError] = React.useState<string | null>(null)
   const [copiedPrompt, setCopiedPrompt] = React.useState<string | null>(null)
   const [activePrompt, setActivePrompt] = React.useState<keyof typeof FIX_PROMPTS | null>(null)
+  const [flashedFiles, setFlashedFiles] = React.useState<Set<string>>(new Set())
 
   // Parse input whenever it changes
   React.useEffect(() => {
@@ -1344,6 +1345,16 @@ function ApplyFixesView({ projectId, compact = false }: { projectId: string; com
         const file = await handle.getFile()
         const content = await file.text()
 
+        // Count occurrences — warn if search string appears more than once (ambiguous)
+        const occurrenceCount = content.split(entry.search).length - 1
+        if (occurrenceCount > 1) {
+          newResults.push({
+            file: entry.file,
+            status: 'error',
+            message: `Ambiguous: "${entry.search.slice(0, 40)}…" found ${occurrenceCount} times in ${entry.file} — make search string more specific`,
+          })
+          continue
+        }
         if (!content.includes(entry.search)) {
           newResults.push({
             file: entry.file,
@@ -1375,6 +1386,31 @@ function ApplyFixesView({ projectId, compact = false }: { projectId: string; com
 
     setResults(newResults)
     setIsApplying(false)
+
+    // Flash applied files with color for 2.5 seconds
+    const appliedFiles = new Set(
+      newResults.filter((r) => r.status === 'applied').map((r) => r.file)
+    )
+    if (appliedFiles.size > 0) {
+      setFlashedFiles(appliedFiles)
+      setTimeout(() => setFlashedFiles(new Set()), 2500)
+    }
+
+    // Re-read changed files into editor if currently open
+    const { openLocalHandle, openLocalPath } = getLocalState(projectId)
+    if (openLocalHandle && openLocalPath) {
+      const wasChanged = newResults.some(
+        (r) => r.status === 'applied' &&
+        (openLocalPath.endsWith(r.file) || r.file.endsWith(openLocalPath.replace(/^\/+/, '')))
+      )
+      if (wasChanged) {
+        try {
+          const f = await openLocalHandle.getFile()
+          const text = await f.text()
+          useEditorStore.getState().setContent(text)
+        } catch { /* handle stale — skip */ }
+      }
+    }
   }, [parsed, projectId, getLocalState])
 
   const handleCopyPrompt = React.useCallback(async (key: keyof typeof FIX_PROMPTS) => {
