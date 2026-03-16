@@ -230,27 +230,7 @@ export function useEditor(projectId: string) {
     }
   }, [isLocalMode, openFileId, projectId, fileContent, markClean, currentFile])
 
-  const saveCurrentFile = useCallback(async () => {
-    // In local mode, DB save is still needed to keep cloud in sync
-    // (local disk save is handled separately by saveLocalFile)
-    if (!openFileId || isSavingRef.current) return
 
-    isSavingRef.current = true
-    try {
-      const res = await fetch(
-        `/api/projects/${projectId}/files/${openFileId}/code`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ codeContent: fileContent, content: fileContent }),
-        }
-      )
-      if (!res.ok) throw new Error('Failed to save file')
-      markClean()
-    } finally {
-      isSavingRef.current = false
-    }
-  }, [isLocalMode, openFileId, projectId, fileContent, markClean])
 
   // ── DB-mode: mark complete ────────────────────────────────────────────────
 
