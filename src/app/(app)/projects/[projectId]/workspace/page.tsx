@@ -1269,17 +1269,25 @@ FORMAT (mandatory):
 ]
 \`\`\`
 
-CRITICAL RULES FOR search STRING — THIS IS THE MOST IMPORTANT PART:
-- search must be the COMPLETE exact text as it appears in the file right now
-- Include EVERY line in the block — comments, blank lines, indentation, punctuation — nothing skipped
-- If there are blank lines between statements, include them in search
-- If there are comments above or below the code, include them in search
-- The search string must be unique in the file — if it appears more than once, add more surrounding lines until it is unique
-- NEVER truncate or summarize search — copy it character for character from the file
-- replace follows the same rules — include every line of the new block exactly as it should appear
+CRITICAL RULES FOR search STRING:
+- Keep search to 1-4 lines MAXIMUM — it is only an anchor, not the full block
+- Pick the most unique line(s) near the change — function signature, unique className, unique comment
+- search must appear EXACTLY ONCE in the entire file — if not unique, add 1 more surrounding line
+- NEVER put more than 4 lines in search — split into multiple entries instead
+- NEVER truncate, summarize, or use ellipsis in search — copy character for character
+- replace can be ANY length — put the complete new code here, no limits
+- To replace a large block: use the first unique line as search, write the entire new block in replace
+
+COMPLETENESS RULES — NEVER break anything:
+- replace must be 100% complete — no placeholders, no '// ... existing code ...', no '// TODO'
+- Every import, every function, every handler must be fully written
+- Never guess types, props, or variable names — only use what you can see in the provided files
+- If a function needs to stay unchanged, copy it exactly into replace
+- Never omit closing brackets, braces, or tags
+- If you are unsure about any part, include MORE context in search to confirm what you are replacing
 
 Other rules:
-- One object per change location — multiple objects for multiple files or multiple spots in same file
+- One object per change location — multiple objects for multiple files or spots
 - NO text before or after the JSON array
 - NO explanation of what you changed
 
@@ -1299,10 +1307,17 @@ FORMAT (mandatory):
 \`\`\`
 
 CRITICAL RULES FOR search STRING:
-- search must be the COMPLETE exact text as it appears in the file right now
-- Include EVERY line — comments, blank lines, indentation — nothing skipped or summarized
-- Include enough surrounding lines to make search unique in the file
-- NEVER paraphrase or shorten search — copy it character for character
+- Keep search to 1-4 lines MAXIMUM — it is only an anchor, not the full block
+- Pick the most unique line(s) near the change — function signature, unique className, unique comment
+- search must appear EXACTLY ONCE in the entire file — if not unique, add 1 more surrounding line
+- NEVER put more than 4 lines in search — split into multiple entries instead
+- replace can be ANY length — put the complete new code here, no limits
+
+COMPLETENESS RULES — NEVER break anything:
+- replace must be 100% complete — no placeholders, no '// ... existing code ...', no '// TODO'
+- Every import, every function, every handler must be fully written
+- Never guess types, props, or variable names — only use what you can see in the provided files
+- Never omit closing brackets, braces, or tags
 
 Other rules:
 - One entry per change location — multiple entries for multiple files or spots
@@ -1324,10 +1339,17 @@ FORMAT (mandatory):
 \`\`\`
 
 CRITICAL RULES FOR search STRING:
-- search must be the COMPLETE exact text of the anchor block as it appears in the file
-- Include EVERY line of the anchor — comments, blank lines, indentation — nothing skipped
-- Include enough lines to make search unique in the file
-- NEVER use empty string for search — always anchor to real existing code
+- Keep search to 1-4 lines MAXIMUM — it is only an anchor, not the full block
+- Pick the most unique line near where you want to insert — a unique comment, function name, or import
+- search must appear EXACTLY ONCE in the file
+- NEVER use empty string for search
+- replace can be ANY length — include the anchor line PLUS all the new code to insert
+
+COMPLETENESS RULES — NEVER break anything:
+- replace must be 100% complete — no placeholders, no '// ... existing code ...', no '// TODO'
+- Always include the original anchor line in replace so nothing is deleted accidentally
+- Every new function, handler, import must be fully written
+- Never guess types or variable names — only use what you see in the provided files
 - NO explanation — ONLY the JSON array
 
 Describe the feature to add:`,
@@ -1346,10 +1368,16 @@ FORMAT (mandatory):
 \`\`\`
 
 CRITICAL RULES FOR search STRING:
-- search must be the COMPLETE exact text as it appears in the file right now
-- Include EVERY line — comments, blank lines, indentation — nothing skipped
-- Make search unique by including enough surrounding context
-- Preserve all existing functionality — only change structure/naming/patterns
+- Keep search to 1-4 lines MAXIMUM — it is only an anchor
+- Pick the most unique line(s) in the block to refactor
+- search must appear EXACTLY ONCE in the file
+- replace can be ANY length — write the complete refactored version
+
+COMPLETENESS RULES — NEVER break anything:
+- replace must be 100% complete — preserve all existing functionality
+- No placeholders, no '// ... existing code ...', no '// TODO'
+- Every function signature, every type annotation must be preserved or explicitly changed
+- Never omit closing brackets, braces, or tags
 - NO explanation — ONLY the JSON array
 
 Describe what to refactor:`,
@@ -1368,12 +1396,16 @@ FORMAT (mandatory):
 \`\`\`
 
 CRITICAL RULES FOR search STRING:
-- search must be the COMPLETE exact text as it appears in the file right now
-- Include EVERY line in the block — comments, blank lines, indentation — nothing skipped
-- Include enough surrounding lines to make search unique in the file
-- NEVER truncate — copy character for character from the file
-- Fix type errors without changing runtime behavior
-- If fix requires a new import, add a separate entry for the import block
+- Keep search to 1-4 lines MAXIMUM — it is only an anchor
+- Pick the exact line containing the type error — copy it character for character
+- search must appear EXACTLY ONCE in the file — add 1 surrounding line if not unique
+- replace can be ANY length — write the complete fixed version
+
+COMPLETENESS RULES — NEVER break anything:
+- Fix the type error without changing runtime behavior
+- replace must be 100% complete — no placeholders
+- If fix requires a new import, add a separate entry targeting the existing import block
+- Never guess types — only use types visible in the provided files
 - NO explanation — ONLY the JSON array
 
 Paste the TypeScript error output:`,
