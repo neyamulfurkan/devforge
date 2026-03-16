@@ -186,34 +186,6 @@ function GcdPlusPromptButton({
     </button>
   )
 }
-// ─── Component ────────────────────────────────────────────────────────────────,
-      '',
-      '',
-      filePrompt,
-      '',
-      sep,
-      'OUTPUT FORMAT — YOU MUST FOLLOW THIS EXACTLY:',
-      sep,
-      '',
-      '1. Output the COMPLETE file implementation — every function, every handler, every import fully written. No placeholders, no "// TODO", no truncation.',
-      '',
-      '2. Immediately after the code block output this JSON registry entry (no commentary between them):',
-      '',
-      '```json',
-      '{',
-      `  "file": "${filePath}",`,
-      `  "fileNumber": "${fileNumber}",`,
-      '  "exports": [],',
-      '  "imports": [],',
-      '  "keyLogic": "brief description of what this file does",',
-      '  "sideEffects": [],',
-      '  "dependents": [],',
-      '  "status": "complete",',
-      `  "generatedAt": "${new Date().toISOString()}"`,
-      '}',
-      '```',
-      '',
-
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
