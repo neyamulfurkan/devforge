@@ -1,33 +1,66 @@
-'use client'
-
 // 1. React imports
-import { useCallback } from 'react'
-
-// 2. Third-party imports
+import { useEffect } from 'react'
+// 2. Third-party library imports
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-
-// 3. Internal imports
+// 3. Internal imports — stores, types
 import { useProjectStore } from '@/store/projectStore'
-import type { Project, FileStatus, ProjectStatus } from '@/types'
-
-// ─── Local return type ────────────────────────────────────────────────────────
-
-interface UseProjectReturn {
-  project: Project | null
-  isLoading: boolean
-  error: Error | null
-  updateStatus: (status: ProjectStatus) => Promise<void>
-  updateFile: (fileId: string, status: FileStatus) => Promise<void>
-  refetch: () => void
+import type { Project, FileStatus, ApiResponse } from '@/types'
+// 4. Local types
+interface UpdateStatusParams {
+  status: import('@/types').ProjectStatus
 }
-
-// ─── Hook ─────────────────────────────────────────────────────────────────────
-
-export function useProject(projectId: string): UseProjectReturn {
+interface UpdateFileParams {
+  fileId: string
+  updates: {
+    status?: FileStatus
+    notes?: string
+    filePrompt?: string
+    requiredFiles?: string[]
+  }
+}
+async function fetchProject(projectId: string): Promise<Project> {
+  const res = await fetch(`/api/projects/${projectId}`)
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as ApiResponse
+    throw new Error(body.error ?? 'Failed to fetch project')
+  }
+  const body = (await res.json()) as ApiResponse<Project>
+  if (!body.data) throw new Error('No project data returned')
+  return body.data
+}
+async function patchProject(projectId: string, updates: UpdateStatusParams): Promise<Project> {
+  const res = await fetch(`/api/projects/${projectId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as ApiResponse
+    throw new Error(body.error ?? 'Failed to update project')
+  }
+  const body = (await res.json()) as ApiResponse<Project>
+  if (!body.data) throw new Error('No project data returned')
+  return body.data
+}
+async function patchFile(
+  projectId: string,
+  fileId: string,
+  updates: UpdateFileParams['updates']
+): Promise<void> {
+  const res = await fetch(`/api/projects/${projectId}/files/${fileId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as ApiResponse
+    throw new Error(body.error ?? 'Failed to update file')
+  }
+}
+export function useProject(projectId: string) {
   const queryClient = useQueryClient()
-  const { setCurrentProject } = useProjectStore()
-
-  // ── Fetch project ──────────────────────────────────────────────────────────
+  const setCurrentProject = useProjectStore((s) => s.setCurrentProject)
+  const updateFileStatusInStore = useProjectStore((s) => s.updateFileStatus)
   const {
     data: project,
     isLoading,
@@ -35,94 +68,44 @@ export function useProject(projectId: string): UseProjectReturn {
     refetch,
   } = useQuery<Project, Error>({
     queryKey: ['project', projectId],
-    queryFn: async () => {
-      const res = await fetch(`/api/projects/${projectId}`)
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(
-          (body as { error?: string }).error ??
-            `Failed to fetch project (${res.status})`
-        )
-      }
-      const json = await res.json() as { data: Project }
-      return json.data
-    },
-    enabled: !!projectId,
+    queryFn: () => fetchProject(projectId),
+    enabled: Boolean(projectId),
     staleTime: 10_000,
   })
-
-  // Sync into projectStore whenever fresh data arrives
-  const { setCurrentProject: syncStore } = useProjectStore()
-  if (project) {
-    syncStore(projectId, project)
-  }
-
-  // ── Update project status ──────────────────────────────────────────────────
-  const updateStatusMutation = useMutation({
-    mutationFn: async (status: ProjectStatus) => {
-      const res = await fetch(`/api/projects/${projectId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(
-          (body as { error?: string }).error ?? 'Failed to update project status'
-        )
-      }
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project', projectId] })
-      void queryClient.invalidateQueries({ queryKey: ['projects'] })
+  // Sync fetched project into global store
+  useEffect(() => {
+    if (project) {
+      setCurrentProject(project.id, project)
+    }
+  }, [project, setCurrentProject])
+  const updateStatusMutation = useMutation<Project, Error, UpdateStatusParams>({
+    mutationFn: (params) => patchProject(projectId, params),
+    onSuccess: (updatedProject) => {
+      queryClient.setQueryData<Project>(['project', projectId], updatedProject)
+      setCurrentProject(updatedProject.id, updatedProject)
     },
   })
-
-  // ── Update file status ─────────────────────────────────────────────────────
-  const updateFileMutation = useMutation({
-    mutationFn: async ({ fileId, status }: { fileId: string; status: FileStatus }) => { 
-      const res = await fetch(
-        `/api/projects/${projectId}/files/${fileId}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status }),
-        }
-      )
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(
-          (body as { error?: string }).error ?? 'Failed to update file status'
-        )
+  const updateFileMutation = useMutation<void, Error, UpdateFileParams>({
+    mutationFn: ({ fileId, updates }) => patchFile(projectId, fileId, updates),
+    onMutate: ({ fileId, updates }) => {
+      // Optimistic update for file status changes
+      if (updates.status) {
+        updateFileStatusInStore(fileId, updates.status)
       }
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['files', projectId] })
-      void queryClient.invalidateQueries({ queryKey: ['project', projectId] })
+    onSettled: () => {
+      // Revalidate file list after mutation settles
+      queryClient.invalidateQueries({ queryKey: ['files', projectId] })
     },
   })
-
-  // ── Stable callbacks ───────────────────────────────────────────────────────
-  const updateStatus = useCallback(
-    async (status: ProjectStatus): Promise<void> => {
-      await updateStatusMutation.mutateAsync(status)
-    },
-    [updateStatusMutation]
-  )
-
-  const updateFile = useCallback(
-    async (fileId: string, status: FileStatus): Promise<void> => {
-      await updateFileMutation.mutateAsync({ fileId, status })
-    },
-    [updateFileMutation]
-  )
-
   return {
     project: project ?? null,
     isLoading,
-    error: error ?? null,
-    updateStatus,
-    updateFile,
+    error,
     refetch,
+    updateStatus: (params: UpdateStatusParams) => updateStatusMutation.mutate(params),
+    updateFile: (params: UpdateFileParams) => updateFileMutation.mutate(params),
+    isUpdatingStatus: updateStatusMutation.isPending,
+    isUpdatingFile: updateFileMutation.isPending,
   }
 }
