@@ -146,6 +146,27 @@ export default function MonacoEditorWrapper({
         language={language}
         theme={editorTheme}
         value={editorValue}
+        beforeMount={(monaco) => {
+          // Suppress false-positive type errors — Monaco's browser TS service
+          // has no access to node_modules or path aliases so it flags valid
+          // imports as errors. Syntax validation (highlighting) stays on.
+          monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+            noSemanticValidation: true,
+            noSyntaxValidation: false,
+          })
+          monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+            noSemanticValidation: true,
+            noSyntaxValidation: false,
+          })
+          monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+            baseUrl: '.',
+            paths: { '@/*': ['src/*'] },
+            jsx: monaco.languages.typescript.JsxEmit.ReactJSX,
+            moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+            allowSyntheticDefaultImports: true,
+            esModuleInterop: true,
+          })
+        }}
         onMount={(editor) => {
           editorInstanceRef.current = editor
           if (onEditorMount) {
@@ -199,7 +220,10 @@ export default function MonacoEditorWrapper({
           formatOnPaste: false,
           find: {
             addExtraSpaceOnTop: false,
+            seedSearchStringFromSelection: 'selection',
           },
+          // Keep the find widget inside the editor scroll container
+          fixedOverflowWidgets: false,
 
           // Accessibility
           accessibilitySupport: 'auto',
