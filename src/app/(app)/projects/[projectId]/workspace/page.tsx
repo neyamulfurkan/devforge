@@ -1033,10 +1033,10 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
       prefilledFilePath={jsonModalFilePath}
     />
     <div className="flex h-full w-full overflow-hidden">
-{/* Left: File tree + Apply Fixes panel — resizable + split mode */}
+      {/* Left: File tree + Apply Fixes panel — resizable + split mode */}
       <div
         style={{ width: sidebarWidth }}
-        className="hidden shrink-0 border-r border-[var(--border-subtle)] md:flex md:flex-col relative bg-[var(--bg-secondary)]"
+        className="hidden shrink-0 border-r border-[var(--border-subtle)] md:flex md:flex-col relative bg-[var(--bg-secondary)] overflow-hidden"
       >
         {/* Right-edge width resize handle */}
         <div
@@ -1062,9 +1062,9 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
         </div>
 
         {splitMode ? (
-          <div className="flex flex-col h-full overflow-hidden">
+          <div className="flex flex-col w-full h-full overflow-hidden">
             <div
-              className="flex flex-col overflow-hidden"
+              className="flex flex-col overflow-hidden flex-shrink-0"
               style={{ height: `calc(100% - ${applyFixesHeight}px - 6px)`, minHeight: 120 }}
             >
               <EditorFileTree
