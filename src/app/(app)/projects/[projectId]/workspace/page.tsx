@@ -17,6 +17,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 
 // 4b. Additional icon imports for EditorLayout
 import { FolderOpen, FolderDown, Loader2, CheckCircle2, ChevronRight, Sparkles, Check, Wand2, Bug, Plus, GitBranch, Copy, CheckCheck, XCircle, AlertCircle, FileEdit, ChevronDown } from 'lucide-react'
+// Note: Sparkles and Copy already imported above — used in ApplyFixesView Flow A
 
 // 5. Internal imports — workspace components
 import { WorkspaceNav } from '@/components/workspace/WorkspaceNav'
@@ -1143,6 +1144,28 @@ interface ApplyFixesResult {
 }
 
 // Prompt templates that enforce Claude to always respond in parseable format
+const GCD_FILE_REQUEST_PROMPT = `You are reviewing a codebase to identify which files need to be read before fixing the issues described.
+
+Respond with ONLY a JSON object in this exact format — no prose, no explanation:
+
+\`\`\`json
+{
+  "files": [
+    "exact/path/from/project/root.ts",
+    "another/file/path.tsx"
+  ],
+  "reason": "one sentence explaining why these files are needed"
+}
+\`\`\`
+
+RULES:
+- List ONLY files that are directly relevant to the fix
+- Use exact paths as they appear in the project structure
+- Maximum 10 files
+- NO text before or after the JSON object
+
+Here is the Global Context Document and the issue to fix:`
+
 const FIX_PROMPTS = {
   bug: `You are fixing bugs in a codebase. Respond with ONLY a JSON array — no prose, no explanation, no markdown outside the array.
 
@@ -1269,6 +1292,7 @@ Paste the TypeScript error output:`,
 
 function ApplyFixesView({ projectId, compact = false }: { projectId: string; compact?: boolean }): JSX.Element {
   const { getLocalState } = useEditorStore()
+  const { document: docData } = useDocument(projectId)
   const [input, setInput] = React.useState('')
   const [results, setResults] = React.useState<ApplyFixesResult[]>([])
   const [isApplying, setIsApplying] = React.useState(false)
@@ -1277,6 +1301,12 @@ function ApplyFixesView({ projectId, compact = false }: { projectId: string; com
   const [copiedPrompt, setCopiedPrompt] = React.useState<string | null>(null)
   const [activePrompt, setActivePrompt] = React.useState<keyof typeof FIX_PROMPTS | null>(null)
   const [flashedFiles, setFlashedFiles] = React.useState<Set<string>>(new Set())
+  const [fileListInput, setFileListInput] = React.useState('')
+  const [parsedFileList, setParsedFileList] = React.useState<string[]>([])
+  const [fileListParseError, setFileListParseError] = React.useState<string | null>(null)
+const [copiedFiles, setCopiedFiles] = React.useState(false)
+  const [activeStep, setActiveStep] = React.useState<1 | 2 | 3>(1)
+  const [copiedGcd, setCopiedGcd] = React.useState(false)
 
   // Parse input whenever it changes
   React.useEffect(() => {
@@ -1304,6 +1334,71 @@ function ApplyFixesView({ projectId, compact = false }: { projectId: string; com
       setParseError(e instanceof Error ? e.message : 'Invalid format')
     }
   }, [input])
+
+  // Parse Claude's file list response
+  const parseFileListResponse = React.useCallback((raw: string) => {
+    if (!raw.trim()) {
+      setParsedFileList([])
+      setFileListParseError(null)
+      return
+    }
+    try {
+      const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/)
+      const jsonStr = fenceMatch ? fenceMatch[1] : raw.trim()
+      const data = JSON.parse(jsonStr) as unknown
+      if (typeof data !== 'object' || data === null || !Array.isArray((data as Record<string, unknown>).files)) {
+        throw new Error('Response must have a "files" array')
+      }
+      const files = (data as { files: unknown[] }).files
+      if (!files.every((f) => typeof f === 'string')) {
+        throw new Error('All entries in "files" must be strings')
+      }
+      setParsedFileList(files as string[])
+      setFileListParseError(null)
+    } catch (e) {
+      setParsedFileList([])
+      setFileListParseError(e instanceof Error ? e.message : 'Invalid format')
+    }
+  }, [])
+
+  // Read all requested files from local folder and copy to clipboard
+  const handleCopyRequestedFiles = React.useCallback(async () => {
+    if (parsedFileList.length === 0) return
+    const { localFileTree } = getLocalState(projectId)
+    if (!localFileTree || localFileTree.length === 0) {
+      alert('No local folder linked. Link your project folder in the Editor tab first.')
+      return
+    }
+
+    const sep = '═'.repeat(60)
+    const blocks: string[] = []
+    const notFound: string[] = []
+
+    for (const filePath of parsedFileList) {
+      const handle = findHandle(localFileTree, filePath)
+      if (!handle) {
+        notFound.push(filePath)
+        blocks.push(`${sep}\nFILE: ${filePath}\n${sep}\n[FILE NOT FOUND IN LOCAL FOLDER]`)
+        continue
+      }
+      try {
+        const file = await handle.getFile()
+        const content = await file.text()
+        blocks.push(`${sep}\nFILE: ${filePath}\n${sep}\n${content}`)
+      } catch {
+        blocks.push(`${sep}\nFILE: ${filePath}\n${sep}\n[COULD NOT READ FILE]`)
+      }
+    }
+
+    const fixInstruction = `\n\n${sep}\nNOW PROVIDE FIXES\n${sep}\n\nYou have read all the files above. Now provide ALL fixes as a JSON array:\n\n[\n  {\n    "file": "exact/path/from/project/root.ts",\n    "search": "COMPLETE exact text including every comment, blank line, and indentation — copy character for character",\n    "replace": "exact replacement"\n  }\n]\n\nCRITICAL: search must be the COMPLETE exact text as it appears in the file — every comment, blank line, space included. ONLY the JSON array in your response.`
+
+    const combined = blocks.join('\n\n') + fixInstruction
+
+    await navigator.clipboard.writeText(combined)
+    setCopiedFiles(true)
+    setActiveStep(3)
+    setTimeout(() => setCopiedFiles(false), 2500)
+  }, [parsedFileList, projectId, getLocalState])
 
   // Walk local file tree to find a handle by path
   function findHandle(
@@ -1456,10 +1551,138 @@ function ApplyFixesView({ projectId, compact = false }: { projectId: string; com
         </div>
       )}
 
-      {/* Prompt buttons */}
+      {/* ── FLOW A: GCD-based file review ── */}
       <div className={cn('rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] space-y-2', compact ? 'p-2' : 'p-4 space-y-3')}>
         <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
-          {compact ? 'Step 1 — Copy prompt' : 'Step 1 — Copy a prompt and send it to Claude with your question'}
+          {compact ? 'Flow A — GCD + errors' : 'Flow A — Paste GCD + errors → Claude tells you which files to review'}
+        </p>
+
+        {/* Step A1 — copy GCD + file-request prompt */}
+        <div className="space-y-1.5">
+          <p className="text-[10px] text-[var(--text-tertiary)]">
+            {compact ? 'A1. Copy GCD' : 'A1. Copy your Global Context Document — paste it into Claude first'}
+          </p>
+          <button
+            type="button"
+            onClick={async () => {
+              const gcd = docData?.rawContent ?? ''
+              if (!gcd) { alert('No GCD found. Import your Global Context Document first.'); return }
+              await navigator.clipboard.writeText(gcd)
+              setCopiedGcd(true)
+              setTimeout(() => setCopiedGcd(false), 2500)
+            }}
+            className={cn(
+              'w-full flex items-center justify-center gap-2 h-7 rounded-lg text-xs font-medium border transition-all duration-150',
+              copiedGcd
+                ? 'bg-[var(--status-complete-bg)] border-[var(--status-complete)]/40 text-[var(--status-complete)]'
+                : docData?.rawContent
+                ? 'border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-emphasis)] hover:bg-[var(--bg-quaternary)]'
+                : 'border-[var(--border-subtle)] text-[var(--text-tertiary)] cursor-not-allowed opacity-50'
+            )}
+            disabled={!docData?.rawContent}
+          >
+            {copiedGcd
+              ? <><CheckCheck className="h-3 w-3" /> GCD Copied!</>
+              : <><Copy className="h-3 w-3" /> {compact ? 'Copy GCD' : `Copy GCD${docData?.rawContent ? ` (~${Math.ceil((docData.rawContent.length / 1000))}k chars)` : ' — no doc found'}`}</>
+            }
+          </button>
+        </div>
+
+        {/* Step A1b — copy the file-request prompt */}
+        <div className="space-y-1.5">
+          <p className="text-[10px] text-[var(--text-tertiary)]">
+            {compact ? 'A1b. Copy prompt' : 'A1b. Copy this prompt → paste into Claude after the GCD with your error description'}
+          </p>
+          <button
+            type="button"
+            onClick={async () => {
+              await navigator.clipboard.writeText(GCD_FILE_REQUEST_PROMPT)
+              setCopiedPrompt('gcd_request')
+              setTimeout(() => setCopiedPrompt(null), 2000)
+            }}
+            className={cn(
+              'w-full flex items-center justify-center gap-2 h-7 rounded-lg text-xs font-medium border transition-all duration-150',
+              copiedPrompt === 'gcd_request'
+                ? 'bg-[var(--status-complete-bg)] border-[var(--status-complete)]/40 text-[var(--status-complete)]'
+                : 'border-[var(--accent-border)] bg-[var(--accent-light)] text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-white'
+            )}
+          >
+            {copiedPrompt === 'gcd_request'
+              ? <><CheckCheck className="h-3 w-3" /> Copied!</>
+              : <><Copy className="h-3 w-3" /> Copy File-Request Prompt</>
+            }
+          </button>
+        </div>
+
+        {/* Step A2 — paste Claude's file list response */}
+        <div className="space-y-1.5">
+          <p className="text-[10px] text-[var(--text-tertiary)]">
+            {compact ? 'A2. Paste file list' : 'A2. Paste Claude\'s response — DevForge will read those files and copy them for you'}
+          </p>
+          <textarea
+            value={fileListInput}
+            onChange={(e) => { setFileListInput(e.target.value); parseFileListResponse(e.target.value) }}
+            placeholder={'Paste Claude\'s file list response here…'}
+            rows={compact ? 3 : 4}
+            spellCheck={false}
+            className={cn(
+              'w-full resize-y rounded-md border px-3 py-2 font-mono text-xs',
+              'bg-[var(--bg-input)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]',
+              'outline-none transition-colors duration-150 focus:ring-1',
+              fileListParseError && fileListInput.trim()
+                ? 'border-[var(--status-error)] focus:ring-[var(--status-error)]'
+                : parsedFileList.length > 0
+                ? 'border-[var(--status-complete)] focus:ring-[var(--status-complete)]'
+                : 'border-[var(--border-default)] focus:border-[var(--accent-primary)] focus:ring-[var(--accent-primary)]'
+            )}
+          />
+          {fileListParseError && fileListInput.trim() && (
+            <p className="flex items-center gap-1 text-[10px] text-[var(--status-error)]">
+              <XCircle className="h-3 w-3 flex-shrink-0" />{fileListParseError}
+            </p>
+          )}
+          {parsedFileList.length > 0 && (
+            <div className="space-y-1">
+              {parsedFileList.map((f, i) => (
+                <p key={i} className="text-[10px] font-mono text-[var(--accent-primary)] truncate">
+                  • {f}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Step A3 — copy all files + fix prompt */}
+        {parsedFileList.length > 0 && (
+          <button
+            type="button"
+            onClick={handleCopyRequestedFiles}
+            className={cn(
+              'w-full flex items-center justify-center gap-2 h-7 rounded-lg text-xs font-medium transition-all duration-150',
+              copiedFiles
+                ? 'bg-[var(--status-complete-bg)] border border-[var(--status-complete)]/40 text-[var(--status-complete)]'
+                : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white active:scale-95'
+            )}
+          >
+            {copiedFiles
+              ? <><CheckCheck className="h-3 w-3" /> Copied {parsedFileList.length} files!</>
+              : <><Sparkles className="h-3 w-3" /> Copy {parsedFileList.length} file{parsedFileList.length !== 1 ? 's' : ''} + Fix Prompt</>
+            }
+          </button>
+        )}
+      </div>
+
+      {/* Divider */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 h-px bg-[var(--border-subtle)]" />
+        <span className="text-[10px] text-[var(--text-tertiary)]">or use a quick prompt</span>
+        <div className="flex-1 h-px bg-[var(--border-subtle)]" />
+      </div>
+
+      {/* ── FLOW B: Quick prompt buttons ── */}
+      <div className={cn('rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] space-y-2', compact ? 'p-2' : 'p-4 space-y-3')}>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+          {compact ? 'Flow B — Quick prompt' : 'Flow B — Copy a quick prompt and describe the fix directly to Claude'}
         </p>
         <div className={cn('gap-1.5', compact ? 'flex flex-col' : 'grid grid-cols-2 md:grid-cols-3 gap-2')}>
           {(Object.keys(FIX_PROMPTS) as Array<keyof typeof FIX_PROMPTS>).map((key) => {
