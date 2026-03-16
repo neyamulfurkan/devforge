@@ -1359,7 +1359,7 @@ RULES:
 Here is the Global Context Document and the issue to fix:`
 
 const FIX_PROMPTS = {
-  bug: `You are fixing bugs in a codebase. Respond with ONLY a JSON array — no prose, no explanation, no markdown outside the array.
+  bug: `You are fixing bugs in a codebase. Respond with ONLY a JSON array — no prose, no explanation, no markdown outside the array. NEVER switch to plain-text format. ALWAYS stay in JSON. Escape backticks as \u0060, newlines as \n, backslashes as \\\\ inside JSON string values.
 
 FORMAT (mandatory):
 \`\`\`json
@@ -1404,7 +1404,7 @@ CRITICAL JSON ESCAPING RULES — ALWAYS USE JSON, NEVER SWITCH TO PLAIN-TEXT:
 
 Now describe the bug:`,
 
-  feature_modify: `You are modifying an existing feature. Respond with ONLY a JSON array.
+  feature_modify: `You are modifying an existing feature. Respond with ONLY a JSON array. NEVER switch to plain-text format. ALWAYS stay in JSON. Escape backticks as \u0060, newlines as \n, backslashes as \\\\ inside JSON string values.
 
 FORMAT (mandatory):
 \`\`\`json
@@ -1444,7 +1444,7 @@ CRITICAL JSON ESCAPING RULES — ALWAYS USE JSON, NEVER SWITCH TO PLAIN-TEXT:
 
 Describe the feature modification:`,
 
-  feature_add: `You are adding a new feature by modifying existing files. Respond with ONLY a JSON array.
+  feature_add: `You are adding a new feature by modifying existing files. Respond with ONLY a JSON array. NEVER switch to plain-text format. ALWAYS stay in JSON. Escape backticks as \u0060, newlines as \n, backslashes as \\\\ inside JSON string values.
 
 FORMAT (mandatory):
 \`\`\`json
@@ -1481,7 +1481,7 @@ CRITICAL JSON ESCAPING RULES — ALWAYS USE JSON, NEVER SWITCH TO PLAIN-TEXT:
 
 Describe the feature to add:`,
 
-  refactor: `You are refactoring code. Respond with ONLY a JSON array of changes.
+  refactor: `You are refactoring code. Respond with ONLY a JSON array of changes. NEVER switch to plain-text format. ALWAYS stay in JSON. Escape backticks as \u0060, newlines as \n, backslashes as \\\\ inside JSON string values.
 
 FORMAT (mandatory):
 \`\`\`json
@@ -1517,7 +1517,7 @@ CRITICAL JSON ESCAPING RULES — ALWAYS USE JSON, NEVER SWITCH TO PLAIN-TEXT:
 
 Describe what to refactor:`,
 
-  typescript_fix: `You are fixing TypeScript errors. Respond with ONLY a JSON array.
+  typescript_fix: `You are fixing TypeScript errors. Respond with ONLY a JSON array. NEVER switch to plain-text format. ALWAYS stay in JSON. Escape backticks as \u0060, newlines as \n, backslashes as \\\\ inside JSON string values.
 
 FORMAT (mandatory):
 \`\`\`json
