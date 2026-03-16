@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 
 // 4. Internal imports — services, hooks, validation, utils
 import { useErrors } from '@/hooks/useErrors'
+import { useEditorStore } from '@/store/editorStore'
 import { addErrorSessionSchema, type AddErrorSessionInput } from '@/validations/error'
 import { cn } from '@/lib/utils'
 import { CopyButton } from '@/components/shared/CopyButton'
@@ -42,6 +43,10 @@ RULES:
 
 Here are the error logs:`
 
+const WINDOWS_SCAN_CMD = `npx tsc --noEmit 2>&1 | node -e "const fs=require('fs');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>fs.writeFileSync('devforge-errors.json',JSON.stringify({errors:d,timestamp:Date.now()})))"`
+
+const MAC_SCAN_CMD = `npx tsc --noEmit 2>&1 | node -e "const fs=require('fs');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>fs.writeFileSync('devforge-errors.json',JSON.stringify({errors:d,timestamp:Date.now()})))"`
+
 const ERROR_TYPE_OPTIONS = [
   { value: 'TYPESCRIPT', label: 'TypeScript' },
   { value: 'BUILD', label: 'Build' },
@@ -62,9 +67,15 @@ export function AddErrorSession({ projectId, onAdded }: AddErrorSessionProps): J
   const [autoParsedFiles, setAutoParsedFiles] = useState<string[]>([])
   const [autoFileListInput, setAutoFileListInput] = useState('')
   const [autoFileListError, setAutoFileListError] = useState<string | null>(null)
+  const [scannedErrors, setScannedErrors] = useState<string>('')
+  const [isScanning, setIsScanning] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const [copiedScanCmd, setCopiedScanCmd] = useState(false)
+  const [lastScanTime, setLastScanTime] = useState<number | null>(null)
 
   // 8b. External hooks
   const { addSession, addTscSession, parseTscOutput } = useErrors(projectId)
+  const getLocalState = useEditorStore((s) => s.getLocalState)
 
   const handleAutoCopyPrompt = useCallback(async () => {
     if (!autoOutput.trim()) return
@@ -152,6 +163,53 @@ export function AddErrorSession({ projectId, onAdded }: AddErrorSessionProps): J
     setIsOpen(true)
   }, [])
 
+  const isWindows = typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('win')
+
+  const handleCopyScanCmd = useCallback(async () => {
+    const cmd = isWindows ? WINDOWS_SCAN_CMD : MAC_SCAN_CMD
+    await navigator.clipboard.writeText(cmd)
+    setCopiedScanCmd(true)
+    setTimeout(() => setCopiedScanCmd(false), 2500)
+  }, [isWindows])
+
+  const handleScanFromFolder = useCallback(async () => {
+    setIsScanning(true)
+    setScanError(null)
+    try {
+      const { localFileTree: localTree } = getLocalState(projectId)
+
+      const findFile = (nodes: Array<{ type: string; name: string; path: string; handle: unknown; children?: unknown[] }>, name: string): FileSystemFileHandle | null => {
+        for (const node of nodes) {
+          if (node.type === 'file' && node.name === name) return node.handle as FileSystemFileHandle
+          if (node.type === 'folder' && node.children) {
+            const found = findFile(node.children as Array<{ type: string; name: string; path: string; handle: unknown; children?: unknown[] }>, name)
+            if (found) return found
+          }
+        }
+        return null
+      }
+
+      const handle = findFile(localTree, 'devforge-errors.json')
+      if (!handle) {
+        setScanError('devforge-errors.json not found. Run the scan command in your terminal first, then click Scan again.')
+        setIsScanning(false)
+        return
+      }
+
+      const file = await handle.getFile()
+      const text = await file.text()
+      const parsed = JSON.parse(text) as { errors: string; timestamp: number }
+      setScannedErrors(parsed.errors ?? '')
+      setLastScanTime(parsed.timestamp ?? null)
+      setAutoOutput(parsed.errors ?? '')
+      setScanError(null)
+    } catch {
+      setScanError('Could not read devforge-errors.json. Make sure you have linked your project folder in the Editor tab.')
+    } finally {
+      setIsScanning(false)
+    }
+  }, [projectId])
+
   const handleCancel = useCallback(() => {
     setIsOpen(false)
     setInputMode('standard')
@@ -160,6 +218,8 @@ export function AddErrorSession({ projectId, onAdded }: AddErrorSessionProps): J
     setAutoParsedFiles([])
     setAutoFileListInput('')
     setAutoFileListError(null)
+    setScannedErrors('')
+    setScanError(null)
     reset()
   }, [reset])
 
@@ -360,6 +420,63 @@ src/components/workspace/ErrorSessionCard.tsx(18,3): error TS7006: Parameter 'se
       {/* ── Auto Fix mode ── */}
       {inputMode === 'auto' && (
         <div className="space-y-3">
+          {/* ── Scan from folder ── */}
+          <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 space-y-2">
+            <p className="text-xs font-semibold text-[var(--text-secondary)]">
+              Auto Scan — reads errors directly from your project folder
+            </p>
+            <p className="text-xs text-[var(--text-tertiary)] leading-relaxed">
+              Run this command once in your terminal. DevForge will read the output automatically.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleCopyScanCmd}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-2 h-8 rounded-lg text-xs font-medium border transition-all duration-150',
+                  copiedScanCmd
+                    ? 'bg-[var(--status-complete-bg)] border-[var(--status-complete)]/40 text-[var(--status-complete)]'
+                    : 'border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]'
+                )}
+              >
+                {copiedScanCmd ? '✓ Copied!' : `📋 Copy ${isWindows ? 'Windows' : 'Mac/Linux'} Scan Command`}
+              </button>
+              <button
+                type="button"
+                onClick={handleScanFromFolder}
+                disabled={isScanning}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-2 h-8 rounded-lg text-xs font-medium transition-all duration-150',
+                  isScanning
+                    ? 'bg-[var(--bg-quaternary)] text-[var(--text-tertiary)] cursor-wait'
+                    : scannedErrors
+                    ? 'bg-[var(--status-complete-bg)] border border-[var(--status-complete)]/40 text-[var(--status-complete)]'
+                    : 'bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white active:scale-95'
+                )}
+              >
+                {isScanning ? '⏳ Scanning…' : scannedErrors ? '✓ Errors Loaded' : '🔍 Scan Project'}
+              </button>
+            </div>
+            {scanError && (
+              <p className="text-xs text-[var(--status-error)] leading-relaxed">{scanError}</p>
+            )}
+            {scannedErrors && lastScanTime && (
+              <p className="text-xs text-[var(--status-complete)]">
+                ✓ {scannedErrors.split('\n').filter((l) => l.includes('error TS')).length} TypeScript errors loaded
+                {' — '}scanned {new Date(lastScanTime).toLocaleTimeString()}
+              </p>
+            )}
+            <p className="text-[10px] text-[var(--text-tertiary)]">
+              Tip: Run the scan command whenever you want fresh errors. Click Scan Project to reload.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-px bg-[var(--border-subtle)]" />
+            <span className="text-[10px] text-[var(--text-tertiary)]">or paste manually</span>
+            <div className="flex-1 h-px bg-[var(--border-subtle)]" />
+          </div>
+
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--text-secondary)] block">
               Step 1 — Paste ALL error logs (TypeScript, build, runtime, console — any format)

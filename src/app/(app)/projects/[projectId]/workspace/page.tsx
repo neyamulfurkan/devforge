@@ -1291,6 +1291,15 @@ Other rules:
 - NO text before or after the JSON array
 - NO explanation of what you changed
 
+IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON — it handles all special characters safely:
+
+FILE: exact/path/from/project/root.ts
+SEARCH:
+exact code to find
+REPLACE:
+new code
+---
+
 Now describe the bug:`,
 
   feature_modify: `You are modifying an existing feature. Respond with ONLY a JSON array.
@@ -1323,6 +1332,15 @@ Other rules:
 - One entry per change location — multiple entries for multiple files or spots
 - NO prose, NO explanation — ONLY the JSON array
 
+IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
+
+FILE: exact/path/from/project/root.ts
+SEARCH:
+exact code to find
+REPLACE:
+new code
+---
+
 Describe the feature modification:`,
 
   feature_add: `You are adding a new feature by modifying existing files. Respond with ONLY a JSON array.
@@ -1352,6 +1370,15 @@ COMPLETENESS RULES — NEVER break anything:
 - Never guess types or variable names — only use what you see in the provided files
 - NO explanation — ONLY the JSON array
 
+IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
+
+FILE: exact/path/from/project/root.ts
+SEARCH:
+exact code to find
+REPLACE:
+new code
+---
+
 Describe the feature to add:`,
 
   refactor: `You are refactoring code. Respond with ONLY a JSON array of changes.
@@ -1379,6 +1406,15 @@ COMPLETENESS RULES — NEVER break anything:
 - Every function signature, every type annotation must be preserved or explicitly changed
 - Never omit closing brackets, braces, or tags
 - NO explanation — ONLY the JSON array
+
+IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
+
+FILE: exact/path/from/project/root.ts
+SEARCH:
+exact code to find
+REPLACE:
+new code
+---
 
 Describe what to refactor:`,
 
@@ -1408,6 +1444,15 @@ COMPLETENESS RULES — NEVER break anything:
 - Never guess types — only use types visible in the provided files
 - NO explanation — ONLY the JSON array
 
+IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
+
+FILE: exact/path/from/project/root.ts
+SEARCH:
+exact code to find
+REPLACE:
+new code
+---
+
 Paste the TypeScript error output:`,
 }
 
@@ -1429,37 +1474,78 @@ const [copiedFiles, setCopiedFiles] = React.useState(false)
   const [activeStep, setActiveStep] = React.useState<1 | 2 | 3>(1)
   const [copiedGcd, setCopiedGcd] = React.useState(false)
 
-  // Parse input whenever it changes
+const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
+    const entries: FixEntry[] = []
+    const blocks = raw.split(/^---\s*$/m).map((b) => b.trim()).filter(Boolean)
+    if (blocks.length === 0) return null
+    for (const block of blocks) {
+      const fileMatch = block.match(/^FILE:\s*(.+)$/m)
+      const searchIdx = block.indexOf('SEARCH:\n')
+      const replaceIdx = block.indexOf('REPLACE:\n')
+      if (!fileMatch || searchIdx === -1 || replaceIdx === -1) return null
+      const searchStart = searchIdx + 'SEARCH:\n'.length
+      const searchEnd = replaceIdx
+      const replaceStart = replaceIdx + 'REPLACE:\n'.length
+      const file = fileMatch[1].trim()
+      const search = block.slice(searchStart, searchEnd).trim()
+      const replace = block.slice(replaceStart).trim()
+      if (!file || !search) return null
+      entries.push({ file, search, replace })
+    }
+    return entries.length > 0 ? entries : null
+  }, [])
+
+  // Parse input whenever it changes — tries JSON first, then plain-text format
   React.useEffect(() => {
     if (!input.trim()) {
       setParsed(null)
       setParseError(null)
       return
     }
+    // ── Attempt 1: JSON format ──
     try {
-      // Extract JSON array from response — handles ```json fences or raw array
       const fenceStart = input.indexOf('```')
-      const fenceMatch: [null, string] | null = fenceStart !== -1 ? [null, (() => {
+      let jsonStr: string
+      if (fenceStart !== -1) {
         const afterFence = input.indexOf('\n', fenceStart) + 1
         const closeFence = input.indexOf('```', afterFence)
-        return closeFence !== -1 ? input.slice(afterFence, closeFence).trim() : input.slice(afterFence).trim()
-      })()] : null
-      const jsonStr = fenceMatch ? fenceMatch[1] : input.trim()
+        jsonStr = closeFence !== -1 ? input.slice(afterFence, closeFence).trim() : input.slice(afterFence).trim()
+      } else {
+        jsonStr = input.trim()
+      }
+      jsonStr = jsonStr.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
       const data = JSON.parse(jsonStr) as unknown
-      if (!Array.isArray(data)) throw new Error('Response must be a JSON array')
-      // Validate each entry
+      if (!Array.isArray(data)) throw new Error('not an array')
       for (const entry of data) {
-        if (typeof (entry as Record<string, unknown>).file !== 'string') throw new Error('Each entry must have a "file" string')
-        if (typeof (entry as Record<string, unknown>).search !== 'string') throw new Error('Each entry must have a "search" string')
-        if (typeof (entry as Record<string, unknown>).replace !== 'string') throw new Error('Each entry must have a "replace" string')
+        if (typeof (entry as Record<string, unknown>).file !== 'string') throw new Error('missing file')
+        if (typeof (entry as Record<string, unknown>).search !== 'string') throw new Error('missing search')
+        if (typeof (entry as Record<string, unknown>).replace !== 'string') throw new Error('missing replace')
       }
       setParsed(data as FixEntry[])
       setParseError(null)
-    } catch (e) {
-      setParsed(null)
-      setParseError(e instanceof Error ? e.message : 'Invalid format')
+      return
+    } catch {
+      // JSON failed — try plain-text format
     }
-  }, [input])
+    // ── Attempt 2: Plain-text format ──
+    // Expected format:
+    // FILE: path/to/file.ts
+    // SEARCH:
+    // exact code to find
+    // REPLACE:
+    // new code
+    // ---
+    if (input.includes('FILE:') && input.includes('SEARCH:') && input.includes('REPLACE:')) {
+      const plainResult = parsePlainText(input)
+      if (plainResult) {
+        setParsed(plainResult)
+        setParseError(null)
+        return
+      }
+    }
+    setParsed(null)
+    setParseError('Could not parse — paste a JSON array or use the plain-text format:\nFILE: path\nSEARCH:\ncode\nREPLACE:\nnew code\n---')
+  }, [input, parsePlainText])
 
   // Parse Claude's file list response
   const parseFileListResponse = React.useCallback((raw: string) => {
@@ -1873,7 +1959,7 @@ const [copiedFiles, setCopiedFiles] = React.useState(false)
         <textarea
           value={input}
           onChange={(e) => { setInput(e.target.value); setResults([]) }}
-          placeholder={compact ? 'Paste JSON here…' : `Paste Claude's JSON response here, e.g.:\n[\n  {\n    "file": "src/components/Button.tsx",\n    "search": "const x = 1",\n    "replace": "const x = 2"\n  }\n]`}
+          placeholder={compact ? 'Paste JSON or plain-text format here…' : `Paste Claude's JSON response OR plain-text format:\n\nJSON format:\n[\n  { "file": "src/Button.tsx", "search": "const x = 1", "replace": "const x = 2" }\n]\n\nPlain-text format (works with backticks and regex):\nFILE: src/Button.tsx\nSEARCH:\nconst x = 1\nREPLACE:\nconst x = 2\n---`}
           rows={compact ? 5 : 10}
           spellCheck={false}
           className={cn(
