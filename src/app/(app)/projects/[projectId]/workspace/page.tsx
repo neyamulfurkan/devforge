@@ -1336,6 +1336,7 @@ interface ApplyFixesResult {
 }
 
 // Prompt templates that enforce Claude to always respond in parseable format
+const GCD_FILE_REQUEST_PROMPT = 'You are reviewing a codebase to identify which files need to be read before fixing the issues described.\n\nRespond with ONLY a JSON object in this exact format - no prose, no explanation:\n\njson\n{\n  "files": [\n    "exact/path/from/project/root.ts",\n    "another/file/path.tsx"\n  ],\n  "reason": "one sentence explaining why these files are needed"\n}\n\n\nRULES:\n- List ONLY files that are directly relevant to the fix\n- Use exact paths as they appear in the project structure\n- Maximum 10 files\n- NO text before or after the JSON object\n\nHere is the Global Context Document and the issue to fix:'
 const GCD_FILE_REQUEST_PROMPT = 'You are reviewing a codebase to identify which files need to be read before fixing the issues described.\n\nRespond with ONLY a JSON object in this exact format \u2014 no prose, no explanation:\n\n```json\n{\n  "files": [\n    "exact/path/from/project/root.ts",\n    "another/file/path.tsx"\n  ],\n  "reason": "one sentence explaining why these files are needed"\n}\n```\n\nRULES:\n- List ONLY files that are directly relevant to the fix\n- Use exact paths as they appear in the project structure\n- Maximum 10 files\n- NO text before or after the JSON object\n\nHere is the Global Context Document and the issue to fix:'
 
 \`\`\`json
