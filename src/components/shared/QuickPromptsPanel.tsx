@@ -17,10 +17,11 @@ import {
   ArrowLeftToLine,
   ArrowRightToLine,
   Maximize2,
+  Minimize2,
   ChevronDown,
   LayoutGrid,
   List,
-  Plus,
+  GripVertical,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'sonner'
@@ -29,7 +30,9 @@ import { AI_TOOL_COLOR_MAP } from '@/lib/constants'
 import { copyToClipboard, cn } from '@/lib/utils'
 import type { PinnedPrompt } from '@/store/quickPromptsStore'
 
-const PANEL_WIDTH = 340
+const PANEL_MIN_WIDTH = 280
+const PANEL_MAX_WIDTH = 560
+const PANEL_DEFAULT_WIDTH = 340
 const PANEL_COLLAPSED_WIDTH = 52
 const SNAP_THRESHOLD = 80
 
@@ -282,6 +285,11 @@ export function QuickPromptsPanel() {
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'buttons'>('list')
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 })
+  const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH)
+  const [isMaximized, setIsMaximized] = useState(false)
+  const isResizing = useRef(false)
+  const resizeStartX = useRef(0)
+  const resizeStartWidth = useRef(0)
 
   useLayoutEffect(() => {
     const update = () =>
@@ -296,22 +304,61 @@ export function QuickPromptsPanel() {
       const w = viewportSize.w || window.innerWidth
       const h = viewportSize.h || window.innerHeight
       return {
-        x: Math.max(8, Math.min(x, w - PANEL_WIDTH - 8)),
+        x: Math.max(8, Math.min(x, w - panelWidth - 8)),
         y: Math.max(8, Math.min(y, h - 120)),
       }
     },
-    [viewportSize]
+    [viewportSize, panelWidth]
   )
 
   const snapToDock = useCallback(
     (x: number) => {
       const w = viewportSize.w || window.innerWidth
       if (x < SNAP_THRESHOLD) return 'left' as const
-      if (x > w - PANEL_WIDTH - SNAP_THRESHOLD) return 'right' as const
+      if (x > w - panelWidth - SNAP_THRESHOLD) return 'right' as const
       return 'free' as const
     },
-    [viewportSize]
+    [viewportSize, panelWidth]
   )
+
+  const onResizeStart = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      e.stopPropagation()
+      isResizing.current = true
+      resizeStartX.current = e.clientX
+      resizeStartWidth.current = panelWidth
+      ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    },
+    [panelWidth]
+  )
+
+  const onResizeMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!isResizing.current) return
+      const dx = e.clientX - resizeStartX.current
+      const newWidth = Math.max(
+        PANEL_MIN_WIDTH,
+        Math.min(PANEL_MAX_WIDTH, resizeStartWidth.current + dx)
+      )
+      setPanelWidth(newWidth)
+    },
+    []
+  )
+
+  const onResizeEnd = useCallback(() => {
+    isResizing.current = false
+  }, [])
+
+  const toggleMaximize = useCallback(() => {
+    if (isMaximized) {
+      setPanelWidth(PANEL_DEFAULT_WIDTH)
+      setIsMaximized(false)
+    } else {
+      setPanelWidth(PANEL_MAX_WIDTH)
+      setIsMaximized(true)
+    }
+  }, [isMaximized])
 
   const onDragStart = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -354,7 +401,7 @@ export function QuickPromptsPanel() {
     panelDock === 'left'
       ? 12
       : panelDock === 'right'
-      ? (viewportSize.w || window.innerWidth) - PANEL_WIDTH - 12
+      ? (viewportSize.w || window.innerWidth) - panelWidth - 12
       : panelPosition.x
   const resolvedY = panelPosition.y
 
@@ -400,7 +447,7 @@ export function QuickPromptsPanel() {
               left: resolvedX,
               top: resolvedY,
               zIndex: 9998,
-              width: panelCollapsed ? PANEL_COLLAPSED_WIDTH : PANEL_WIDTH,
+              width: panelCollapsed ? PANEL_COLLAPSED_WIDTH : panelWidth,
               willChange: 'transform',
             }}
             className={cn(
@@ -474,7 +521,7 @@ export function QuickPromptsPanel() {
                   <button
                     type="button"
                     onClick={() => {
-                      setPanelPosition({ x: (viewportSize.w || window.innerWidth) - PANEL_WIDTH - 12, y: resolvedY })
+                      setPanelPosition({ x: (viewportSize.w || window.innerWidth) - panelWidth - 12, y: resolvedY })
                       setPanelDock('right')
                     }}
                     aria-label="Dock right"
@@ -493,6 +540,20 @@ export function QuickPromptsPanel() {
                 </div>
               )}
 
+              <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); toggleMaximize() }}
+                    aria-label={isMaximized ? 'Restore size' : 'Maximize panel'}
+                    title={isMaximized ? 'Restore size' : 'Maximize panel'}
+                    className="flex items-center justify-center w-5 h-5 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-quaternary)] transition-colors duration-150"
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    {isMaximized ? (
+                      <Minimize2 className="w-3 h-3" />
+                    ) : (
+                      <Maximize2 className="w-3 h-3" />
+                    )}
+                  </button>
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); toggleCollapsed() }}
@@ -641,6 +702,20 @@ export function QuickPromptsPanel() {
                   </div>
                 )}
               </motion.div>
+            )}
+
+            {/* Right-edge drag-to-resize handle */}
+            {!panelCollapsed && (
+              <div
+                onPointerDown={onResizeStart}
+                onPointerMove={onResizeMove}
+                onPointerUp={onResizeEnd}
+                onPointerCancel={onResizeEnd}
+                className="absolute top-0 right-0 w-3 h-full cursor-ew-resize flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-150 group/resize z-10"
+                title="Drag to resize"
+              >
+                <div className="w-0.5 h-8 rounded-full bg-[var(--accent-primary)]/40 group-hover/resize:bg-[var(--accent-primary)] transition-colors duration-150" />
+              </div>
             )}
 
             {panelCollapsed && pinnedPrompts.length > 0 && (
