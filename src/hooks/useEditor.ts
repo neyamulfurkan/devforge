@@ -190,7 +190,7 @@ export function useEditor(projectId: string) {
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ codeContent: fileContent }),
+          body: JSON.stringify({ codeContent: fileContent, content: fileContent }),
         }
       )
       if (!res.ok) throw new Error('Failed to save file')
@@ -667,7 +667,7 @@ export function useEditor(projectId: string) {
       await fetch(`/api/projects/${projectId}/files/${fileId}/code`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, codeContent: content }),
       })
     },
     [projectId, fileContent, isLocalMode, openLocalHandle]

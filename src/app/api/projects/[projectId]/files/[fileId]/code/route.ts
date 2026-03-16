@@ -103,18 +103,22 @@ export async function PUT(
 
     const body: unknown = await request.json()
 
+    const bodyObj = body as Record<string, unknown>
+    // Accept both "content" (Cloudinary path) and "codeContent" (legacy DB field name)
+    const rawContent = bodyObj.codeContent ?? bodyObj.content
+
     if (
       !body ||
       typeof body !== 'object' ||
-      typeof (body as Record<string, unknown>).content !== 'string'
+      typeof rawContent !== 'string'
     ) {
       return NextResponse.json(
-        { error: 'Request body must contain a "content" string' },
+        { error: 'Request body must contain a "codeContent" or "content" string' },
         { status: 400 }
       )
     }
 
-    const content = (body as { content: string }).content
+    const content = rawContent as string
     const lineCount = content.split('\n').length
 
     // Upload code to Cloudinary — primary storage, zero Neon column usage
