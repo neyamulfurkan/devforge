@@ -186,10 +186,7 @@ function GcdPlusPromptButton({
     </button>
   )
 }
-      // ─── Component ────────────────────────────────────────────────────────────────
-      sep,
-      '',
-      'FILE-SPECIFIC PROMPT (read STEP 1 first — it governs whether you may write code):',
+// ─── Component ────────────────────────────────────────────────────────────────,
       '',
       '',
       filePrompt,
@@ -216,32 +213,7 @@ function GcdPlusPromptButton({
       '}',
       '```',
       '',
-      'Do NOT add any commentary after the JSON block. The JSON is the last thing in your response.',
-    ].join('\n')
 
-    navigator.clipboard.writeText(combined).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    }).catch(() => undefined)
-  }, [gcdContent, filePrompt, filePath, fileNumber, requiredFiles])
-
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      title="Copy GCD + this file's prompt with dependency check instructions"
-      className={cn(
-        'inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-medium border transition-all duration-150',
-        copied
-          ? 'border-[var(--status-complete)]/40 bg-[var(--status-complete-bg)] text-[var(--status-complete)]'
-          : 'border-[var(--border-default)] bg-[var(--bg-quaternary)] text-[var(--text-tertiary)] hover:border-[var(--accent-border)] hover:bg-[var(--accent-light)] hover:text-[var(--accent-primary)]'
-      )}
-    >
-      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-      {copied ? 'Copied!' : 'GCD+'}
-    </button>
-  )
-}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
