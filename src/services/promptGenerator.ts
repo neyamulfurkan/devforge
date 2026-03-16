@@ -73,8 +73,21 @@ export interface JsonRegistryEntryInput {
   dependents: string        // comma-separated or "None"
 }
 
-// ─── Variable substitution ────────────────────────────────────────────────────
+export interface TscErrorIdentifyInput {
+  projectName: string
+  tscOutput: string          // full raw tsc --noEmit output
+  errorGroups: string        // pre-formatted grouped summary
+  gcdSections: string        // relevant GCD sections (1,3,4,5,9,11)
+}
 
+export interface TscErrorReplaceInput {
+  tscOutput: string
+  identifiedFiles: string    // newline-separated paths
+  fileContents: string       // full source of each file
+  gcdSections: string        // relevant GCD sections (5,9)
+}
+
+// ─── Variable substitution ────────────────────────────────────────────────────
 /**
  * Replaces all {{VARIABLE_NAME}} placeholders in a template string.
  * Unknown variables are left as-is so nothing is silently dropped.
@@ -330,6 +343,46 @@ export async function generateJsonRegistryEntry(
     KEY_LOGIC: input.keyLogic,
     SIDE_EFFECTS: input.sideEffects,
     DEPENDENTS: input.dependents,
+  }
+
+  return substituteVariables(template.content, variables)
+}
+
+/**
+ * Generates Step 1 of the TSC error workflow — file identification.
+ * Includes the pre-parsed error groups so Claude immediately sees which
+ * files have the most errors before reading the full raw output.
+ */
+export async function generateTscErrorIdentifyPrompt(
+  input: TscErrorIdentifyInput,
+  userId?: string
+): Promise<string> {
+  const template = await getTemplate('tsc_error_identify', userId)
+
+  const variables: Record<string, string> = {
+    PROJECT_NAME: input.projectName,
+    TSC_OUTPUT: input.tscOutput,
+    ERROR_GROUPS: input.errorGroups,
+    GCD_SECTIONS: input.gcdSections,
+  }
+
+  return substituteVariables(template.content, variables)
+}
+
+/**
+ * Generates Step 2 of the TSC error workflow — surgical line replacements.
+ */
+export async function generateTscErrorReplacePrompt(
+  input: TscErrorReplaceInput,
+  userId?: string
+): Promise<string> {
+  const template = await getTemplate('tsc_error_replace', userId)
+
+  const variables: Record<string, string> = {
+    TSC_OUTPUT: input.tscOutput,
+    IDENTIFIED_FILES: input.identifiedFiles,
+    FILE_CONTENTS: input.fileContents,
+    GCD_SECTIONS: input.gcdSections,
   }
 
   return substituteVariables(template.content, variables)

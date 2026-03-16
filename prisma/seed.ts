@@ -19,6 +19,8 @@ function formatTemplateName(key: DefaultTemplateKey): string {
     file_specific_prompt: 'File-Specific Prompt Template',
     error_identify: 'Error Fix — File Identification Prompt',
     error_replace: 'Error Fix — Line Replacement Prompt',
+    tsc_error_identify: 'TSC Error Fix — File Identification Prompt',
+    tsc_error_replace: 'TSC Error Fix — Line Replacement Prompt',
     feature_delta: 'New Feature Delta Prompt',
     json_registry_entry: 'JSON Registry Entry Template',
   }
@@ -37,6 +39,10 @@ function getTemplateDescription(key: DefaultTemplateKey): string {
       'Step 1 of the error resolution workflow — shown to Claude with the error output to identify which files to examine.',
     error_replace:
       'Step 2 of the error resolution workflow — shown to Claude with the identified files to receive exact line replacements.',
+    tsc_error_identify:
+      'Step 1 of the TSC-specific error workflow — parses npx tsc --noEmit output into grouped diagnostics and identifies root-cause files.',
+    tsc_error_replace:
+      'Step 2 of the TSC-specific error workflow — provides surgical line replacements using the exact TSC error codes and line numbers.',
     feature_delta:
       'Used when adding new features — instructs Claude to produce a JSON delta describing all required file and document changes.',
     json_registry_entry:
@@ -418,8 +424,10 @@ The entry must follow this exact structure:
 }
 
 Output only the JSON object, no additional text.`,
-}
 
+  tsc_error_identify: 'TSC error identification prompt — see templateService.ts for full content.',
+  tsc_error_replace: 'TSC error replacement prompt — see templateService.ts for full content.',
+}
 // ─── Seed ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {

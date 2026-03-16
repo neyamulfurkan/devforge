@@ -72,14 +72,13 @@ export async function POST(
 
     const { projectId } = params
 
-    // Verify ownership and fetch document for prompt generation context
+    // Verify ownership and fetch document + project name for prompt context
     const project = await prisma.project.findUnique({
       where: { id: projectId },
       select: {
         userId: true,
-        document: {
-          select: { rawContent: true },
-        },
+        name: true,
+        document: { select: { rawContent: true } },
       },
     })
 
@@ -95,31 +94,70 @@ export async function POST(
     const validated = addErrorSessionSchema.parse(body)
 
     const documentContent = project.document?.rawContent ?? ''
+    const tscRawOutput = validated.tscRawOutput ?? null
 
-    // Generate both prompts — these never throw (promptGenerator handles fallbacks)
-    const [identifyPrompt, replacePrompt] = await Promise.all([
-      generateErrorIdentifyPrompt(
-        {
-          projectName: projectId,
+    let identifyPrompt: string
+    let replacePrompt: string
+
+    if (tscRawOutput && validated.errorType === 'TYPESCRIPT') {
+      // ── TSC-specific prompt path ──────────────────────────────────────
+      // Import lazily to avoid pulling into every API route at cold-start
+      const { generateTscErrorIdentifyPrompt, generateTscErrorReplacePrompt } =
+        await import('@/services/promptGenerator')
+      const { parseTscOutput, formatTscErrorGroups } =
+        await import('@/hooks/useErrors')
+      const { TSC_REQUIRED_GCD_SECTIONS } = await import('@/lib/constants')
+
+      // Parse the raw TSC output into structured groups for the prompt
+      const groups = parseTscOutput(tscRawOutput)
+      const errorGroupsSummary = formatTscErrorGroups(groups)
+
+      // Extract only the GCD sections Claude needs for error fixing
+      // (1, 3, 4, 5, 9, 11) — avoids sending the full 10k-word document
+      const relevantSections = extractRelevantGcdSections(
+        documentContent,
+        TSC_REQUIRED_GCD_SECTIONS as unknown as string[]
+      )
+
+      ;[identifyPrompt, replacePrompt] = await Promise.all([
+        generateTscErrorIdentifyPrompt({
+          projectName: project.name,
+          tscOutput: tscRawOutput,
+          errorGroups: errorGroupsSummary,
+          gcdSections: relevantSections,
+        }),
+        generateTscErrorReplacePrompt({
+          tscOutput: tscRawOutput,
+          identifiedFiles: '',
+          fileContents: '',
+          gcdSections: relevantSections,
+        }),
+      ])
+    } else {
+      // ── Standard error prompt path (unchanged) ────────────────────────
+      ;[identifyPrompt, replacePrompt] = await Promise.all([
+        generateErrorIdentifyPrompt({
+          projectName: project.name,
           errorType: validated.errorType,
           errorOutput: validated.errorOutput,
           fileRegistry: '',
-          globalContextDocument: documentContent ?? '',
-        }
-      ),
-      generateErrorReplacePrompt({
-        errorOutput: validated.errorOutput,
-        identifiedFiles: '',
-        fileContents: '',
-        globalContextDocument: documentContent ?? '',
-      }),
-    ])
+          globalContextDocument: documentContent,
+        }),
+        generateErrorReplacePrompt({
+          errorOutput: validated.errorOutput,
+          identifiedFiles: '',
+          fileContents: '',
+          globalContextDocument: documentContent,
+        }),
+      ])
+    }
 
     const errorSession = await prisma.errorSession.create({
       data: {
         projectId,
         errorType: validated.errorType,
         errorOutput: validated.errorOutput,
+        tscRawOutput,
         identifyPrompt,
         replacePrompt,
       },
@@ -136,4 +174,32 @@ export async function POST(
     console.error('[POST /api/projects/[projectId]/errors]', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
+}
+
+// ─── GCD section extractor (server-side only) ─────────────────────────────────
+
+/**
+ * Extract specific sections from the GCD raw text by section number.
+ * Used to send only the sections Claude needs rather than the full document.
+ */
+function extractRelevantGcdSections(rawContent: string, sectionNumbers: string[]): string {
+  if (!rawContent) return ''
+  const lines = rawContent.split('\n')
+  const outputLines: string[] = []
+  const allowed = new Set(sectionNumbers)
+
+  let currentSectionAllowed = false
+  let currentSectionNum = ''
+
+  for (const line of lines) {
+    const sectionMatch = line.match(/^##\s+SECTION\s+(\d+(?:\.\d+)?)/i)
+    if (sectionMatch) {
+      const num = sectionMatch[1] ?? ''
+      currentSectionNum = num.split('.')[0] ?? num
+      currentSectionAllowed = allowed.has(currentSectionNum)
+    }
+    if (currentSectionAllowed) outputLines.push(line)
+  }
+
+  return outputLines.join('\n')
 }

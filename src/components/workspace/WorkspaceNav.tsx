@@ -8,6 +8,7 @@ import {
   Code,
   MessageSquare,
   AlertCircle,
+  Terminal,
   Download,
 } from 'lucide-react'
 
@@ -39,6 +40,7 @@ const TABS: TabConfig[] = [
   { id: 'editor', label: 'Editor', icon: Code },
   { id: 'prompts', label: 'Prompts', icon: MessageSquare },
   { id: 'errors', label: 'Errors', icon: AlertCircle },
+  { id: 'setup', label: 'Setup', icon: Terminal },
   { id: 'export', label: 'Export', icon: Download },
 ]
 

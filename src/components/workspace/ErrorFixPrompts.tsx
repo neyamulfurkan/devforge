@@ -75,7 +75,21 @@ function StepCard({ step, label, instruction, promptText }: StepCardProps): JSX.
   )
 }
 
-export function ErrorFixPrompts({ identifyPrompt, replacePrompt }: ErrorFixPromptsProps): JSX.Element {
+// Required GCD sections for error fixing — shown as a strip above Step 1
+const TSC_GCD_REQUIRED = [
+  { num: '1', label: 'Overview' },
+  { num: '3', label: 'Stack' },
+  { num: '4', label: 'File Structure' },
+  { num: '5', label: 'Standards' },
+  { num: '9', label: 'Sequence' },
+  { num: '11', label: 'Registry' },
+]
+
+export function ErrorFixPrompts({
+  identifyPrompt,
+  replacePrompt,
+  isTscSession = false,
+}: ErrorFixPromptsProps & { isTscSession?: boolean }): JSX.Element {
   return (
     <div className="space-y-3">
       {/* Section label */}
@@ -83,19 +97,47 @@ export function ErrorFixPrompts({ identifyPrompt, replacePrompt }: ErrorFixPromp
         AI Fix Prompts
       </p>
 
+      {/* Required GCD sections strip — shown for all sessions, critical for TSC */}
+      <div className="rounded-lg border border-[var(--accent-border)] bg-[var(--accent-light)] px-3 py-2">
+        <p className="text-xs font-medium text-[var(--accent-primary)] mb-1.5">
+          Required GCD sections for Step 1:
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {TSC_GCD_REQUIRED.map((s) => (
+            <span
+              key={s.num}
+              className="inline-flex items-center gap-1 rounded-md bg-[var(--bg-tertiary)] border border-[var(--accent-border)] px-2 py-0.5 text-xs font-mono text-[var(--accent-primary)]"
+            >
+              §{s.num} <span className="text-[var(--text-tertiary)] font-sans">{s.label}</span>
+            </span>
+          ))}
+        </div>
+        <p className="text-xs text-[var(--text-tertiary)] mt-1.5">
+          Paste these sections from your Document tab into Claude before Step 1.
+        </p>
+      </div>
+
       {/* Step 1 */}
       <StepCard
         step={1}
-        label="Step 1 — File Identification"
-        instruction="Show this to Claude along with your complete Global Context Document"
+        label={isTscSession ? 'Step 1 — TSC File Identification' : 'Step 1 — File Identification'}
+        instruction={
+          isTscSession
+            ? 'Show this to Claude with GCD sections §1 §3 §4 §5 §9 §11'
+            : 'Show this to Claude along with your complete Global Context Document'
+        }
         promptText={identifyPrompt}
       />
 
       {/* Step 2 */}
       <StepCard
         step={2}
-        label="Step 2 — Surgical Line Replacement"
-        instruction="Show this to Claude along with the files identified in Step 1"
+        label={isTscSession ? 'Step 2 — TSC Surgical Fix' : 'Step 2 — Surgical Line Replacement'}
+        instruction={
+          isTscSession
+            ? 'Show this to Claude with GCD §5 §9 and the files from Step 1'
+            : 'Show this to Claude along with the files identified in Step 1'
+        }
         promptText={replacePrompt}
       />
     </div>

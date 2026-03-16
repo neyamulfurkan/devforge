@@ -3,6 +3,10 @@ import { z } from 'zod'
 export const addErrorSessionSchema = z.object({
   errorType: z.enum(['TYPESCRIPT', 'BUILD', 'RUNTIME', 'CONSOLE', 'OTHER']),
   errorOutput: z.string().min(10, 'Error output must be at least 10 characters'),
+  // Optional raw TSC output — populated when user pastes `npx tsc --noEmit` output.
+  // When present, errorOutput is derived from this (first 2000 chars) so the
+  // existing two-step prompt flow still works unchanged.
+  tscRawOutput: z.string().optional(),
 })
 
 export const resolveErrorSessionSchema = z.object({

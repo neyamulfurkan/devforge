@@ -281,9 +281,10 @@ model ErrorSession {
   id        String @id @default(cuid())
   projectId String
 
-  errorType   ErrorType
-  errorOutput String             @db.Text
-  status      ErrorSessionStatus @default(PENDING)
+  errorType    ErrorType
+  errorOutput  String             @db.Text
+  tscRawOutput String?            @db.Text
+  status       ErrorSessionStatus @default(PENDING)
 
   // Generated prompts
   identifyPrompt String? @db.Text

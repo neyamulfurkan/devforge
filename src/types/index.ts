@@ -27,7 +27,7 @@ export type {
 export type FileStatus = 'EMPTY' | 'CODE_PASTED' | 'COMPLETE' | 'ERROR'
 export type ProjectStatus = 'IN_PROGRESS' | 'COMPLETE' | 'PAUSED' | 'ARCHIVED'
 export type ErrorType = 'TYPESCRIPT' | 'BUILD' | 'RUNTIME' | 'CONSOLE' | 'OTHER'
-export type WorkspaceTab = 'overview' | 'document' | 'files' | 'editor' | 'prompts' | 'errors' | 'export'
+export type WorkspaceTab = 'overview' | 'document' | 'files' | 'editor' | 'prompts' | 'errors' | 'setup' | 'export'
 
 // 3. Core API response types (Section 5.12)
 export interface ApiResponse<T = unknown> {
@@ -121,6 +121,40 @@ export interface DeltaResult {
     sectionNumber: number
     appendContent: string    // Full markdown text to append to that section
   }>
+}
+
+// 7b. TypeScript error parsing types (used by useErrors + AddErrorSession)
+export interface TscDiagnostic {
+  filePath: string
+  line: number
+  column: number
+  severity: 'error' | 'warning' | 'message'
+  code: string       // e.g. "TS2345"
+  message: string
+}
+
+export interface TscErrorGroup {
+  filePath: string
+  diagnostics: TscDiagnostic[]
+  errorCount: number
+  warningCount: number
+}
+
+// 7c. Parsed Section 14 — environment and dependency manifest
+export interface ParsedSection14 {
+  nodeVersion: string | null          // e.g. "18.x" or null if not specified
+  npmVersion: string | null
+  envVars: Array<{
+    name: string                      // e.g. "DATABASE_URL"
+    description: string               // human-readable explanation
+    required: boolean                 // true = app won't start without it
+    example: string | null            // example value (never a real secret)
+  }>
+  dependencies: string[]              // production dep names from GCD Section 3
+  devDependencies: string[]           // dev dep names
+  postInstallCommands: string[]       // e.g. ["npx prisma generate", "npx prisma migrate dev"]
+  systemPrerequisites: string[]       // e.g. ["PostgreSQL 15+", "Node.js 18+"]
+  setupNotes: string | null           // any free-text notes from the section
 }
 
 // 8. Activity feed entry

@@ -105,6 +105,8 @@ export const DEFAULT_TEMPLATE_KEYS = [
   'file_specific_prompt',
   'error_identify',
   'error_replace',
+  'tsc_error_identify',
+  'tsc_error_replace',
   'feature_delta',
   'json_registry_entry',
 ] as const
@@ -326,6 +328,50 @@ export const TEMPLATE_VARIABLES: Record<DefaultTemplateKey, Array<{ name: string
       example: 'src/hooks/useDocument.ts, src/app/api/projects/[projectId]/document/route.ts',
     },
   ],
+  tsc_error_identify: [
+    {
+      name: 'TSC_OUTPUT',
+      description: 'The raw output from npx tsc --noEmit',
+      example: 'src/hooks/useErrors.ts(42,7): error TS2345: Argument of type...',
+    },
+    {
+      name: 'ERROR_GROUPS',
+      description: 'Structured list of errors grouped by file',
+      example: 'src/hooks/useErrors.ts — 3 errors (TS2345, TS7006, TS2339)',
+    },
+    {
+      name: 'PROJECT_NAME',
+      description: 'The name of the project',
+      example: 'DevForge',
+    },
+    {
+      name: 'GCD_SECTIONS',
+      description: 'The relevant sections of the Global Context Document',
+      example: '## SECTION 1 — PROJECT OVERVIEW...',
+    },
+  ],
+  tsc_error_replace: [
+    {
+      name: 'TSC_OUTPUT',
+      description: 'The raw tsc output for reference',
+      example: 'src/hooks/useErrors.ts(42,7): error TS2345: ...',
+    },
+    {
+      name: 'IDENTIFIED_FILES',
+      description: 'File paths identified for review',
+      example: 'src/hooks/useErrors.ts\nsrc/types/index.ts',
+    },
+    {
+      name: 'FILE_CONTENTS',
+      description: 'Full source of each identified file',
+      example: '// src/hooks/useErrors.ts\n...',
+    },
+    {
+      name: 'GCD_SECTIONS',
+      description: 'The relevant sections of the Global Context Document',
+      example: '## SECTION 5 — CODING STANDARDS...',
+    },
+  ],
 }
 
 // AI tool color map for quick lookup by value
@@ -366,8 +412,23 @@ export const WORKSPACE_TABS = [
   { value: 'editor', label: 'Code Editor' },
   { value: 'prompts', label: 'Prompts' },
   { value: 'errors', label: 'Errors' },
+  { value: 'setup', label: 'Setup' },
   { value: 'export', label: 'Export' },
 ] as const
+
+// Regex patterns for parsing `npx tsc --noEmit` output into structured diagnostics.
+// Each pattern captures: filePath, line, column, severity, code, message.
+export const TSC_ERROR_PATTERNS = {
+  // Standard TS diagnostic: src/foo.ts(12,5): error TS2345: ...
+  DIAGNOSTIC: /^(.+)\((\d+),(\d+)\):\s+(error|warning|message)\s+(TS\d+):\s+(.+)$/,
+  // Bare file reference line (continuation / context line)
+  CONTEXT_LINE: /^\s+/,
+} as const
+
+// GCD sections that must always be included in TSC error prompts.
+// These sections give Claude the type contracts, file structure, and coding
+// standards needed to produce accurate search-replace fixes.
+export const TSC_REQUIRED_GCD_SECTIONS = ['1', '3', '4', '5', '9', '11'] as const
 
 // Section numbers that are append-only (no inline editing)
 export const APPEND_ONLY_SECTIONS = ['11', '12', '13'] as const

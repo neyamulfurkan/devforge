@@ -364,8 +364,88 @@ The entry must follow this exact structure:
 }
 
 Output only the JSON object, no additional text.`,
-}
 
+  tsc_error_identify: `You are an expert TypeScript/Next.js developer. The developer has run \`npx tsc --noEmit\` and received the output below. Your task is to identify the minimal set of files that must be reviewed and fixed.
+
+PROJECT: {{PROJECT_NAME}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ERRORS GROUPED BY FILE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{{ERROR_GROUPS}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FULL TSC OUTPUT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{{TSC_OUTPUT}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RELEVANT GLOBAL CONTEXT DOCUMENT SECTIONS:
+(Sections 1, 3, 4, 5, 9, 11 — the type contracts, file structure, and coding standards)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{{GCD_SECTIONS}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUCTIONS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. List every file path that contains TypeScript errors — one per line, no extra text.
+2. For each file, note the TS error codes present (e.g. TS2345, TS7006).
+3. Identify whether each error is in the file itself or caused by a missing/wrong type exported from a dependency.
+4. If a fix in one file will cascade and resolve errors in other files, call that out explicitly.
+5. Do NOT provide fixes yet. Only identify files and the nature of each error.
+
+OUTPUT FORMAT — use this exactly:
+FILES TO REVIEW:
+src/path/to/file.ts — TS2345, TS7006 (type mismatch on line 42, implicit any on line 87)
+src/path/to/other.ts — TS2339 (property does not exist — likely caused by wrong interface in types/index.ts)
+
+DEPENDENCY ANALYSIS:
+[Which errors are root causes vs cascading effects]
+
+RECOMMENDED REVIEW ORDER:
+[List files in the order they should be fixed to minimise cascading re-fixes]`,
+
+  tsc_error_replace: `You are an expert TypeScript/Next.js developer performing surgical fixes for TypeScript compilation errors.
+
+FULL TSC OUTPUT (for reference):
+{{TSC_OUTPUT}}
+
+FILES TO FIX:
+{{IDENTIFIED_FILES}}
+
+CURRENT FILE CONTENTS:
+{{FILE_CONTENTS}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RELEVANT GLOBAL CONTEXT DOCUMENT SECTIONS:
+(Sections 5 and 9 — coding standards and type contracts)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{{GCD_SECTIONS}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUCTIONS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Provide exact line-level replacements to fix every TypeScript error. Follow these rules:
+
+1. FIND THIS EXACT LINE must be the literal line from the file including all whitespace and indentation.
+2. REPLACE WITH must be the exact replacement including all whitespace and indentation.
+3. Fix one error per replacement block — do not combine multiple fixes into one block.
+4. If a fix requires adding an import, provide a separate replacement block for the import section.
+5. Never rewrite an entire function or file. Surgical replacements only.
+6. After all replacements, state: "Running npx tsc --noEmit after these changes should produce 0 errors."
+
+FORMAT — use this exactly for every change:
+
+FILE: src/path/to/file.ts
+FIND THIS EXACT LINE:
+[paste the exact line with its indentation]
+REPLACE WITH:
+[paste the exact replacement with its indentation]
+REASON: TS2345 — [one sentence explanation]
+---`,
+}
 // ─── Variable substitution (also exported for promptGenerator.ts) ─────────────
 
 /**
@@ -411,6 +491,8 @@ function formatTemplateName(key: DefaultTemplateKey): string {
     file_specific_prompt: 'File-Specific Prompt Template',
     error_identify: 'Error Fix — File Identification Prompt',
     error_replace: 'Error Fix — Line Replacement Prompt',
+    tsc_error_identify: 'TSC Error Fix — File Identification Prompt',
+    tsc_error_replace: 'TSC Error Fix — Line Replacement Prompt',
     feature_delta: 'New Feature Delta Prompt',
     json_registry_entry: 'JSON Registry Entry Template',
   }
@@ -429,6 +511,10 @@ function getTemplateDescription(key: DefaultTemplateKey): string {
       'Step 1 of the error resolution workflow — shown to Claude with the error output to identify which files to examine.',
     error_replace:
       'Step 2 of the error resolution workflow — shown to Claude with the identified files to receive exact line replacements.',
+    tsc_error_identify:
+      'Step 1 of the TSC-specific error workflow — parses npx tsc --noEmit output into grouped diagnostics and identifies root-cause files.',
+    tsc_error_replace:
+      'Step 2 of the TSC-specific error workflow — provides surgical line replacements using the exact TSC error codes and line numbers.',
     feature_delta:
       'Used when adding new features — instructs Claude to produce a JSON delta describing all required file and document changes.',
     json_registry_entry:

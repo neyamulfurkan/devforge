@@ -38,6 +38,7 @@ import { useDocument } from '@/hooks/useDocument'
 import { useProjectStore } from '@/store/projectStore'
 import { useEditorStore } from '@/store/editorStore'
 import type { WorkspaceTab, FileWithContent } from '@/types'
+import { CopyButton } from '@/components/shared/CopyButton'
 
 // 7. Monaco editor — SSR disabled (required: browser-only DOM APIs)
 const MonacoEditorWrapper = dynamic(
@@ -83,6 +84,7 @@ const VALID_TABS: WorkspaceTab[] = [
   'editor',
   'prompts',
   'errors',
+  'setup',
   'export',
 ]
 
@@ -1042,6 +1044,210 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
   )
 }
 
+// ─── Setup tab sub-component ─────────────────────────────────────────────────
+// Renders Section 14 (env vars, install commands, system prereqs) parsed from
+// the GCD. All copy buttons follow the universal CopyButton pattern. No new
+// files — entirely self-contained in this inline component.
+
+interface SetupViewProps {
+  projectId: string
+}
+
+function SetupView({ projectId }: SetupViewProps): JSX.Element {
+  const { document: docData, isLoading } = useDocument(projectId)
+
+  // Parse Section 14 lazily — only when the tab is rendered
+  const section14 = React.useMemo(() => {
+    if (!docData?.rawContent) return null
+    try {
+      // Dynamic import of parseSection14 — avoids adding to the initial bundle
+      // We call it synchronously because documentParser is already loaded
+      const { parseSection14 } = require('@/services/documentParser') as typeof import('@/services/documentParser')
+      return parseSection14(docData.rawContent)
+    } catch {
+      return null
+    }
+  }, [docData?.rawContent])
+
+  // Extract npm install command from Section 3.3 directly for maximum accuracy
+  const npmInstallCmd = React.useMemo(() => {
+    if (!docData?.rawContent) return null
+    const match = docData.rawContent.match(/```[\s\S]*?npm install([\s\S]+?)```/i)
+    if (match) return `npm install${match[1]}`
+    // Fallback: if deps are parsed, build from those
+    if (section14 && section14.dependencies.length > 0) {
+      return `npm install ${section14.dependencies.slice(0, 10).join(' ')}`
+    }
+    return null
+  }, [docData?.rawContent, section14])
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-16">
+        <LoadingSpinner />
+      </div>
+    )
+  }
+
+  if (!docData) {
+    return (
+      <div className="p-6">
+        <EmptyState
+          icon={AlertTriangle}
+          title="No document found"
+          description="Import your Global Context Document first to see setup instructions."
+        />
+      </div>
+    )
+  }
+
+  const envVars = section14?.envVars ?? []
+  const postInstall = section14?.postInstallCommands ?? []
+  const prereqs = section14?.systemPrerequisites ?? []
+  const setupNotes = section14?.setupNotes ?? null
+
+  return (
+    <div className="flex flex-col gap-6 p-4 max-w-4xl mx-auto">
+      {/* ── Header ── */}
+      <div>
+        <h2 className="text-base font-semibold text-[var(--text-primary)]">Project Setup</h2>
+        <p className="text-sm text-[var(--text-secondary)] mt-0.5">
+          Everything you need to run this project locally — parsed from your Global Context Document.
+        </p>
+      </div>
+
+      {/* ── System prerequisites ── */}
+      {prereqs.length > 0 && (
+        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-4 space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Prerequisites</p>
+          <ul className="space-y-1.5">
+            {prereqs.map((p, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-[var(--text-primary)]">
+                <span className="mt-0.5 h-2 w-2 rounded-full bg-[var(--accent-primary)] shrink-0" />
+                {p}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ── npm install ── */}
+      {npmInstallCmd && (
+        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Install Dependencies</p>
+            <CopyButton value={npmInstallCmd} size="sm" label="Copy" />
+          </div>
+          <pre className="rounded-lg bg-[#1a1a1a] border border-[var(--border-subtle)] p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto whitespace-pre-wrap break-all">
+            {npmInstallCmd}
+          </pre>
+        </div>
+      )}
+
+      {/* ── Environment variables ── */}
+      {envVars.length > 0 && (
+        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-4 space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+            Environment Variables
+            <span className="ml-2 font-normal normal-case text-[var(--text-tertiary)]">
+              — copy each name into your .env file
+            </span>
+          </p>
+          <div className="space-y-2">
+            {envVars.map((v) => (
+              <div
+                key={v.name}
+                className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 py-2.5 flex items-start gap-3"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-xs font-semibold text-[var(--text-primary)]">{v.name}</span>
+                    {v.required && (
+                      <span className="text-[10px] font-medium rounded-full px-1.5 py-0.5 bg-[var(--status-error-bg)] text-[var(--status-error)] border border-[var(--status-error)]/20">
+                        required
+                      </span>
+                    )}
+                  </div>
+                  {v.description && (
+                    <p className="text-xs text-[var(--text-tertiary)] mt-0.5">{v.description}</p>
+                  )}
+                  {v.example && (
+                    <p className="text-xs font-mono text-[var(--text-secondary)] mt-0.5 opacity-60">
+                      e.g. {v.example}
+                    </p>
+                  )}
+                </div>
+                <CopyButton value={`${v.name}=`} size="sm" />
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-[var(--text-tertiary)]">
+            Create a <code className="font-mono bg-[var(--bg-quaternary)] px-1 rounded">.env.local</code> file at the project root and add the values above.
+          </p>
+        </div>
+      )}
+
+      {/* ── Post-install commands ── */}
+      {postInstall.length > 0 && (
+        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-4 space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Post-Install Commands</p>
+          <div className="space-y-2">
+            {postInstall.map((cmd, i) => (
+              <div key={i} className="flex items-center gap-3 rounded-lg bg-[#1a1a1a] border border-[var(--border-subtle)] px-3 py-2.5">
+                <span className="text-xs font-mono text-[var(--text-primary)] flex-1 overflow-x-auto whitespace-nowrap">{cmd}</span>
+                <CopyButton value={cmd} size="sm" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Node/npm versions ── */}
+      {(section14?.nodeVersion || section14?.npmVersion) && (
+        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-4 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Required Versions</p>
+          <div className="flex flex-wrap gap-3">
+            {section14?.nodeVersion && (
+              <div className="flex items-center gap-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] px-3 py-2">
+                <span className="text-xs text-[var(--text-tertiary)]">Node.js</span>
+                <span className="font-mono text-xs font-semibold text-[var(--text-primary)]">{section14.nodeVersion}</span>
+                <CopyButton value={section14.nodeVersion} size="sm" />
+              </div>
+            )}
+            {section14?.npmVersion && (
+              <div className="flex items-center gap-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] px-3 py-2">
+                <span className="text-xs text-[var(--text-tertiary)]">npm</span>
+                <span className="font-mono text-xs font-semibold text-[var(--text-primary)]">{section14.npmVersion}</span>
+                <CopyButton value={section14.npmVersion} size="sm" />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Setup notes ── */}
+      {setupNotes && (
+        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-tertiary)] p-4 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Additional Notes</p>
+          <p className="text-sm text-[var(--text-secondary)] whitespace-pre-wrap leading-relaxed">{setupNotes}</p>
+        </div>
+      )}
+
+      {/* ── Fallback: no section 14 data parsed ── */}
+      {!section14 && (
+        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-tertiary)] p-6 text-center space-y-2">
+          <p className="text-sm font-medium text-[var(--text-primary)]">No Section 14 detected</p>
+          <p className="text-xs text-[var(--text-secondary)]">
+            Ask Claude to add a{' '}
+            <code className="font-mono bg-[var(--bg-quaternary)] px-1 rounded">## SECTION 14 — ENVIRONMENT AND SETUP</code>{' '}
+            to your GCD with env vars, prerequisites, and post-install commands.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Document tab sub-component ───────────────────────────────────────────────
 // Renders DocumentSection list from useDocument sections. Falls back gracefully
 // if FILE 097 hasn't been generated yet.
@@ -1267,6 +1473,13 @@ export default function WorkspacePage(): JSX.Element {
         return (
           <div className="flex-1 overflow-y-auto">
             <ErrorsTab projectId={projectId} />
+          </div>
+        )
+
+      case 'setup':
+        return (
+          <div className="flex-1 overflow-y-auto">
+            <SetupView projectId={projectId} />
           </div>
         )
 

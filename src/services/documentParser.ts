@@ -552,6 +552,144 @@ export function appendToSection(
   return [...before, '', appendContent.trim(), ...after].join('\n')
 }
 
+// ─── Section 14 Parser ────────────────────────────────────────────────────────
+
+/**
+ * Parse Section 14 of the GCD into a structured ParsedSection14 object.
+ *
+ * Section 14 is free-form markdown written by Claude. This parser reads common
+ * patterns Claude produces:
+ *   - **NODE_VERSION:** 18.x
+ *   - ENV_VAR: DATABASE_URL — PostgreSQL connection string (required)
+ *   - Post-install: npx prisma generate
+ *   - Dependencies: listed in Section 3.3 (we parse those from the GCD)
+ *
+ * All fields degrade gracefully to null / [] when the section is absent or
+ * uses a format we haven't seen before — never throws.
+ */
+export function parseSection14(rawText: string): import('@/types').ParsedSection14 {
+  const empty: import('@/types').ParsedSection14 = {
+    nodeVersion: null,
+    npmVersion: null,
+    envVars: [],
+    dependencies: [],
+    devDependencies: [],
+    postInstallCommands: [],
+    systemPrerequisites: [],
+    setupNotes: null,
+  }
+
+  try {
+    const sections = extractSections(rawText)
+    const section14 = sections.find((s) => s.sectionNumber === '14')
+    if (!section14) return empty
+
+    const lines = section14.rawContent.split('\n')
+    const result = { ...empty }
+    const notesLines: string[] = []
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) continue
+
+      // ── Node/npm version ──────────────────────────────────────────────
+      const nodeMatch = trimmed.match(/node(?:\.?js)?\s*(?:version)?[:\s]+v?([\d.x]+)/i)
+      if (nodeMatch && !result.nodeVersion) {
+        result.nodeVersion = nodeMatch[1] ?? null
+        continue
+      }
+      const npmMatch = trimmed.match(/npm\s*(?:version)?[:\s]+v?([\d.x]+)/i)
+      if (npmMatch && !result.npmVersion) {
+        result.npmVersion = npmMatch[1] ?? null
+        continue
+      }
+
+      // ── Environment variables ─────────────────────────────────────────
+      // Formats:
+      //   DATABASE_URL=...          (just a name)
+      //   DATABASE_URL — description (required)
+      //   **DATABASE_URL** — description
+      const envMatch = trimmed.match(
+        /^\*{0,2}([A-Z][A-Z0-9_]{2,})\*{0,2}\s*(?:[=:—–-]+\s*(.+?))?(?:\s+\((required|optional)\))?$/
+      )
+      if (envMatch && envMatch[1] && !/^(NOTE|IMPORTANT|TODO|WARNING|SECTION)$/.test(envMatch[1])) {
+        const name = envMatch[1]
+        const rawDesc = (envMatch[2] ?? '').trim()
+        const requiredHint = envMatch[3]
+        const required = requiredHint
+          ? requiredHint === 'required'
+          : /required/i.test(rawDesc)
+
+        // Extract example value if present: "e.g. postgresql://..."
+        const exampleMatch = rawDesc.match(/(?:e\.?g\.?|example)[:\s]+(.+)/i)
+        const example = exampleMatch ? (exampleMatch[1] ?? null) : null
+        const description = rawDesc.replace(/(?:e\.?g\.?|example)[:\s]+.+/i, '').trim()
+
+        result.envVars.push({ name, description, required, example })
+        continue
+      }
+
+      // ── Post-install commands ─────────────────────────────────────────
+      const postInstallMatch = trimmed.match(
+        /^(?:post.?install|run after install|setup commands?)[:\s]+(.+)/i
+      )
+      if (postInstallMatch) {
+        result.postInstallCommands.push((postInstallMatch[1] ?? '').trim())
+        continue
+      }
+      // Also capture bare npx / prisma commands that look like setup steps
+      if (/^npx\s+(?:prisma|shadcn|next|ts-node|tsx)\s+/.test(trimmed)) {
+        result.postInstallCommands.push(trimmed)
+        continue
+      }
+
+      // ── System prerequisites ──────────────────────────────────────────
+      const prereqMatch = trimmed.match(/^(?:requires?|prerequisite|needs?)[:\s]+(.+)/i)
+      if (prereqMatch) {
+        result.systemPrerequisites.push((prereqMatch[1] ?? '').trim())
+        continue
+      }
+
+      // ── Everything else goes into setup notes ─────────────────────────
+      notesLines.push(trimmed)
+    }
+
+    // ── Pull deps from Section 3 (the GCD's package list) ──────────────
+    // Section 3.3 in every GCD lists the full npm dep tree. We parse it
+    // here so the Setup tab can render an accurate npm install command
+    // without duplicating data.
+    const section3 = sections.find((s) => s.sectionNumber === '3')
+    if (section3) {
+      const depLines = section3.rawContent.split('\n')
+      let inDeps = false
+      let inDevDeps = false
+      for (const depLine of depLines) {
+        const dt = depLine.trim()
+        if (/^dependencies:/.test(dt)) { inDeps = true; inDevDeps = false; continue }
+        if (/^devDependencies:/.test(dt)) { inDevDeps = true; inDeps = false; continue }
+        if (inDeps || inDevDeps) {
+          // Lines like: next@14.2.5, react@18.3.1, react-dom@18.3.1
+          const pkgNames = dt
+            .split(/[,\s]+/)
+            .map((p) => p.split('@')[0]?.trim())
+            .filter((p): p is string => Boolean(p) && /^[@a-z]/.test(p))
+          if (pkgNames.length > 0) {
+            if (inDeps) result.dependencies.push(...pkgNames)
+            else result.devDependencies.push(...pkgNames)
+          }
+          // A blank line ends the block
+          if (!dt) { inDeps = false; inDevDeps = false }
+        }
+      }
+    }
+
+    result.setupNotes = notesLines.filter(Boolean).join('\n') || null
+    return result
+  } catch {
+    return empty
+  }
+}
+
 // ─── Raw Content Normalizer ────────────────────────────────────────────────
 
 /**

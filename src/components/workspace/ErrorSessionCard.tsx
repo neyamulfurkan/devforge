@@ -205,6 +205,7 @@ export function ErrorSessionCard({
             <ErrorFixPrompts
               identifyPrompt={session.identifyPrompt!}
               replacePrompt={session.replacePrompt!}
+              isTscSession={session.errorType === 'TYPESCRIPT' && Boolean((session as unknown as Record<string, unknown>).tscRawOutput)}
             />
           )}
 
