@@ -16,7 +16,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 
 // 4b. Additional icon imports for EditorLayout
-import { FolderOpen, FolderDown, Loader2, CheckCircle2, ChevronRight, Sparkles, Check } from 'lucide-react'
+import { FolderOpen, FolderDown, Loader2, CheckCircle2, ChevronRight, Sparkles, Check, Wand2, Bug, Plus, GitBranch, Copy, CheckCheck, XCircle, AlertCircle, FileEdit } from 'lucide-react'
 
 // 5. Internal imports — workspace components
 import { WorkspaceNav } from '@/components/workspace/WorkspaceNav'
@@ -1063,6 +1063,451 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
   )
 }
 
+// ─── Apply Fixes View ─────────────────────────────────────────────────────────
+// Paste Claude's structured fix response → DevForge auto-applies all changes
+// to local files via FileSystemFileHandle without any manual search/replace.
+
+interface FixEntry {
+  file: string
+  search: string
+  replace: string
+}
+
+interface ApplyFixesResult {
+  file: string
+  status: 'applied' | 'not_found' | 'error' | 'no_handle'
+  message: string
+}
+
+// Prompt templates that enforce Claude to always respond in parseable format
+const FIX_PROMPTS = {
+  bug: `You are fixing bugs in a codebase. For EVERY fix, you MUST respond with ONLY a JSON array — no prose, no explanation, no markdown outside the array.
+
+FORMAT (mandatory):
+\`\`\`json
+[
+  {
+    "file": "exact/path/from/project/root.ts",
+    "search": "exact existing code to find (multi-line ok, must be unique in file)",
+    "replace": "exact replacement code"
+  }
+]
+\`\`\`
+
+RULES:
+- search must be the EXACT current text including whitespace/indentation
+- replace is the complete replacement for that exact search string
+- One object per change — multiple objects for multiple files
+- If a file needs multiple changes, add multiple objects with the same file
+- NO text before or after the JSON array
+- NO explanation of what you changed
+
+Now describe the bug and I will provide all fixes in this exact format.`,
+
+  feature_modify: `You are modifying an existing feature. For EVERY change, respond with ONLY a JSON array.
+
+FORMAT (mandatory):
+\`\`\`json
+[
+  {
+    "file": "exact/path/from/project/root.ts",
+    "search": "exact existing code to replace",
+    "replace": "new code"
+  }
+]
+\`\`\`
+
+RULES:
+- search must exactly match current file content including indentation
+- One entry per change location
+- Multiple entries allowed for multiple files or multiple spots in same file
+- NO prose, NO explanation — ONLY the JSON array
+
+Describe the feature modification:`,
+
+  feature_add: `You are adding a new feature by modifying existing files. Respond with ONLY a JSON array.
+
+FORMAT (mandatory):
+\`\`\`json
+[
+  {
+    "file": "exact/path/from/project/root.ts",
+    "search": "existing anchor code to insert near",
+    "replace": "anchor code + new code added"
+  }
+]
+\`\`\`
+
+RULES:
+- To add code, include the surrounding anchor in search and expand it in replace
+- Never use empty string for search — always anchor to real existing code
+- NO explanation — ONLY the JSON array
+
+Describe the feature to add:`,
+
+  refactor: `You are refactoring code. Respond with ONLY a JSON array of changes.
+
+FORMAT (mandatory):
+\`\`\`json
+[
+  {
+    "file": "exact/path/from/project/root.ts",
+    "search": "exact code to refactor",
+    "replace": "refactored version"
+  }
+]
+\`\`\`
+
+RULES:
+- Preserve all existing functionality — only change structure/naming/patterns
+- search must exactly match current content
+- NO explanation — ONLY the JSON array
+
+Describe what to refactor:`,
+
+  typescript_fix: `You are fixing TypeScript errors. Respond with ONLY a JSON array.
+
+FORMAT (mandatory):
+\`\`\`json
+[
+  {
+    "file": "exact/path/from/project/root.ts",
+    "search": "exact line(s) with the type error",
+    "replace": "corrected line(s) with proper types"
+  }
+]
+\`\`\`
+
+RULES:
+- Fix the type error without changing runtime behavior
+- If fixing requires adding an import, add a separate entry for the import line
+- NO explanation — ONLY the JSON array
+
+Paste the TypeScript error output:`,
+}
+
+function ApplyFixesView({ projectId }: { projectId: string }): JSX.Element {
+  const { getLocalState } = useEditorStore()
+  const [input, setInput] = React.useState('')
+  const [results, setResults] = React.useState<ApplyFixesResult[]>([])
+  const [isApplying, setIsApplying] = React.useState(false)
+  const [parsed, setParsed] = React.useState<FixEntry[] | null>(null)
+  const [parseError, setParseError] = React.useState<string | null>(null)
+  const [copiedPrompt, setCopiedPrompt] = React.useState<string | null>(null)
+  const [activePrompt, setActivePrompt] = React.useState<keyof typeof FIX_PROMPTS | null>(null)
+
+  // Parse input whenever it changes
+  React.useEffect(() => {
+    if (!input.trim()) {
+      setParsed(null)
+      setParseError(null)
+      return
+    }
+    try {
+      // Extract JSON array from response — handles ```json fences or raw array
+      const fenceMatch = input.match(/```(?:json)?\s*([\s\S]*?)```/)
+      const jsonStr = fenceMatch ? fenceMatch[1] : input.trim()
+      const data = JSON.parse(jsonStr) as unknown
+      if (!Array.isArray(data)) throw new Error('Response must be a JSON array')
+      // Validate each entry
+      for (const entry of data) {
+        if (typeof (entry as Record<string, unknown>).file !== 'string') throw new Error('Each entry must have a "file" string')
+        if (typeof (entry as Record<string, unknown>).search !== 'string') throw new Error('Each entry must have a "search" string')
+        if (typeof (entry as Record<string, unknown>).replace !== 'string') throw new Error('Each entry must have a "replace" string')
+      }
+      setParsed(data as FixEntry[])
+      setParseError(null)
+    } catch (e) {
+      setParsed(null)
+      setParseError(e instanceof Error ? e.message : 'Invalid format')
+    }
+  }, [input])
+
+  // Walk local file tree to find a handle by path
+  function findHandle(
+    nodes: import('@/store/editorStore').LocalFileNode[],
+    targetPath: string
+  ): FileSystemFileHandle | null {
+    const norm = (p: string) => p.replace(/^\/+/, '').replace(/\\/g, '/')
+    const target = norm(targetPath)
+    for (const node of nodes) {
+      if (node.type === 'file') {
+        const nodePath = norm(node.path)
+        if (
+          nodePath === target ||
+          nodePath.endsWith('/' + target) ||
+          target.endsWith('/' + nodePath)
+        ) {
+          return node.handle as FileSystemFileHandle
+        }
+      }
+      if (node.type === 'folder' && node.children) {
+        const found = findHandle(node.children, targetPath)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  const handleApply = React.useCallback(async () => {
+    if (!parsed || parsed.length === 0) return
+    const { localFileTree } = getLocalState(projectId)
+
+    if (!localFileTree || localFileTree.length === 0) {
+      setResults([{
+        file: 'all',
+        status: 'no_handle',
+        message: 'No local folder linked. Open the Editor tab and link your project folder first.',
+      }])
+      return
+    }
+
+    setIsApplying(true)
+    setResults([])
+    const newResults: ApplyFixesResult[] = []
+
+    for (const entry of parsed) {
+      const handle = findHandle(localFileTree, entry.file)
+      if (!handle) {
+        newResults.push({
+          file: entry.file,
+          status: 'no_handle',
+          message: `File not found in linked folder: ${entry.file}`,
+        })
+        continue
+      }
+
+      try {
+        const file = await handle.getFile()
+        const content = await file.text()
+
+        if (!content.includes(entry.search)) {
+          newResults.push({
+            file: entry.file,
+            status: 'not_found',
+            message: `Search string not found in ${entry.file}`,
+          })
+          continue
+        }
+
+        // Replace first occurrence only (safe — search should be unique)
+        const newContent = content.replace(entry.search, entry.replace)
+        const writable = await handle.createWritable()
+        await writable.write(newContent)
+        await writable.close()
+
+        newResults.push({
+          file: entry.file,
+          status: 'applied',
+          message: `Applied to ${entry.file}`,
+        })
+      } catch (e) {
+        newResults.push({
+          file: entry.file,
+          status: 'error',
+          message: `Error: ${e instanceof Error ? e.message : 'Unknown error'}`,
+        })
+      }
+    }
+
+    setResults(newResults)
+    setIsApplying(false)
+  }, [parsed, projectId, getLocalState])
+
+  const handleCopyPrompt = React.useCallback(async (key: keyof typeof FIX_PROMPTS) => {
+    await navigator.clipboard.writeText(FIX_PROMPTS[key])
+    setCopiedPrompt(key)
+    setActivePrompt(key)
+    setTimeout(() => setCopiedPrompt(null), 2000)
+  }, [])
+
+  const appliedCount = results.filter((r) => r.status === 'applied').length
+  const failedCount = results.filter((r) => r.status !== 'applied').length
+
+  return (
+    <div className="flex flex-col gap-5 p-4 max-w-4xl mx-auto">
+      {/* Header */}
+      <div>
+        <h2 className="text-base font-semibold text-[var(--text-primary)] flex items-center gap-2">
+          <FileEdit className="h-4 w-4 text-[var(--accent-primary)]" />
+          Auto Apply Fixes
+        </h2>
+        <p className="text-sm text-[var(--text-secondary)] mt-0.5">
+          Copy a prompt below → paste into Claude → copy Claude's response → paste here → DevForge applies all changes automatically to your local files.
+        </p>
+      </div>
+
+      {/* Prompt buttons */}
+      <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-4 space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+          Step 1 — Copy a prompt and send it to Claude with your question
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          {(Object.keys(FIX_PROMPTS) as Array<keyof typeof FIX_PROMPTS>).map((key) => {
+            const labels: Record<keyof typeof FIX_PROMPTS, { label: string; icon: JSX.Element; color: string }> = {
+              bug: { label: 'Bug Fix', icon: <Bug className="h-3.5 w-3.5" />, color: 'var(--status-error)' },
+              feature_modify: { label: 'Modify Feature', icon: <GitBranch className="h-3.5 w-3.5" />, color: 'var(--accent-primary)' },
+              feature_add: { label: 'Add Feature', icon: <Plus className="h-3.5 w-3.5" />, color: 'var(--status-complete)' },
+              refactor: { label: 'Refactor', icon: <Wand2 className="h-3.5 w-3.5" />, color: 'var(--status-in-progress)' },
+              typescript_fix: { label: 'TypeScript Fix', icon: <AlertCircle className="h-3.5 w-3.5" />, color: '#60a5fa' },
+            }
+            const meta = labels[key]
+            const isCopied = copiedPrompt === key
+            const isActive = activePrompt === key
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => handleCopyPrompt(key)}
+                style={{ borderColor: isActive ? meta.color : undefined, color: isActive ? meta.color : undefined }}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border transition-all duration-150',
+                  isActive
+                    ? 'bg-[var(--bg-quaternary)]'
+                    : 'border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-emphasis)] hover:bg-[var(--bg-quaternary)]'
+                )}
+              >
+                <span style={{ color: meta.color }}>{meta.icon}</span>
+                {isCopied ? <><CheckCheck className="h-3 w-3" /> Copied!</> : meta.label}
+              </button>
+            )
+          })}
+        </div>
+        {activePrompt && (
+          <div className="rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] px-3 py-2">
+            <p className="text-[10px] text-[var(--text-tertiary)] leading-relaxed">
+              <span className="font-semibold text-[var(--accent-primary)]">Prompt copied.</span>{' '}
+              Paste it into Claude, add your question/error, and Claude will reply with a JSON array only. Copy Claude's entire response and paste it in Step 2 below.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Paste area */}
+      <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-4 space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+          Step 2 — Paste Claude's response here
+        </p>
+        <textarea
+          value={input}
+          onChange={(e) => { setInput(e.target.value); setResults([]) }}
+          placeholder={`Paste Claude's JSON response here, e.g.:\n[\n  {\n    "file": "src/components/Button.tsx",\n    "search": "const x = 1",\n    "replace": "const x = 2"\n  }\n]`}
+          rows={10}
+          spellCheck={false}
+          className={cn(
+            'w-full resize-y rounded-md border px-3 py-2.5 font-mono text-xs',
+            'bg-[var(--bg-input)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]',
+            'outline-none transition-colors duration-150 focus:ring-1',
+            parseError && input.trim()
+              ? 'border-[var(--status-error)] focus:ring-[var(--status-error)]'
+              : parsed
+              ? 'border-[var(--status-complete)] focus:ring-[var(--status-complete)]'
+              : 'border-[var(--border-default)] focus:border-[var(--accent-primary)] focus:ring-[var(--accent-primary)]'
+          )}
+        />
+        {/* Validation feedback */}
+        {parseError && input.trim() && (
+          <p className="flex items-center gap-1.5 text-xs text-[var(--status-error)]">
+            <XCircle className="h-3.5 w-3.5 flex-shrink-0" />
+            {parseError}
+          </p>
+        )}
+        {parsed && (
+          <p className="flex items-center gap-1.5 text-xs text-[var(--status-complete)]">
+            <CheckCheck className="h-3.5 w-3.5 flex-shrink-0" />
+            {parsed.length} fix{parsed.length !== 1 ? 'es' : ''} parsed across{' '}
+            {[...new Set(parsed.map((e) => e.file))].length} file{[...new Set(parsed.map((e) => e.file))].length !== 1 ? 's' : ''}
+          </p>
+        )}
+      </div>
+
+      {/* Preview of parsed fixes */}
+      {parsed && parsed.length > 0 && (
+        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-4 space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+            Step 3 — Review and Apply
+          </p>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {parsed.map((entry, i) => (
+              <div key={i} className="flex items-start gap-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] px-3 py-2">
+                <span className="text-[10px] font-mono text-[var(--text-tertiary)] flex-shrink-0 mt-0.5">#{i + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-mono font-semibold text-[var(--accent-primary)] truncate">{entry.file}</p>
+                  <p className="text-[10px] text-[var(--text-tertiary)] truncate mt-0.5">
+                    search: <span className="text-[var(--text-secondary)]">{entry.search.slice(0, 60)}{entry.search.length > 60 ? '…' : ''}</span>
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={handleApply}
+            disabled={isApplying || !parsed}
+            className={cn(
+              'w-full flex items-center justify-center gap-2 h-9 rounded-lg text-sm font-medium transition-all duration-150',
+              'bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white',
+              'disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99]'
+            )}
+          >
+            {isApplying ? (
+              <><Loader2 className="h-4 w-4 animate-spin" /> Applying fixes…</>
+            ) : (
+              <><CheckCheck className="h-4 w-4" /> Apply {parsed.length} fix{parsed.length !== 1 ? 'es' : ''} to local files</>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Results */}
+      {results.length > 0 && (
+        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Results</p>
+            <div className="flex items-center gap-3">
+              {appliedCount > 0 && (
+                <span className="text-xs font-medium text-[var(--status-complete)]">
+                  ✓ {appliedCount} applied
+                </span>
+              )}
+              {failedCount > 0 && (
+                <span className="text-xs font-medium text-[var(--status-error)]">
+                  ✗ {failedCount} failed
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {results.map((r, i) => (
+              <div
+                key={i}
+                className={cn(
+                  'flex items-start gap-2 rounded-lg px-3 py-2 text-xs border',
+                  r.status === 'applied'
+                    ? 'bg-[var(--status-complete-bg)] border-[var(--status-complete)]/20 text-[var(--status-complete)]'
+                    : r.status === 'not_found'
+                    ? 'bg-[var(--status-in-progress-bg)] border-[var(--status-in-progress)]/20 text-[var(--status-in-progress)]'
+                    : 'bg-[var(--status-error-bg)] border-[var(--status-error)]/20 text-[var(--status-error)]'
+                )}
+              >
+                {r.status === 'applied'
+                  ? <CheckCheck className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                  : <XCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />}
+                <span className="leading-relaxed">{r.message}</span>
+              </div>
+            ))}
+          </div>
+          {failedCount > 0 && (
+            <p className="text-[10px] text-[var(--text-tertiary)] leading-relaxed">
+              For "not found" errors: the search string must exactly match the file content including whitespace and indentation. Ask Claude to re-check the exact text.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Setup tab sub-component ─────────────────────────────────────────────────
 // Renders Section 14 (env vars, install commands, system prereqs) parsed from
 // the GCD. All copy buttons follow the universal CopyButton pattern. No new
@@ -1498,6 +1943,8 @@ export default function WorkspacePage(): JSX.Element {
       case 'setup':
         return (
           <div className="flex-1 overflow-y-auto">
+            <ApplyFixesView projectId={projectId} />
+            <div className="border-t border-[var(--border-subtle)] mx-4" />
             <SetupView projectId={projectId} />
           </div>
         )
