@@ -149,16 +149,23 @@ export default function MonacoEditorWrapper({
         theme={editorTheme}
         value={editorValue}
         beforeMount={(monaco) => {
-          // Suppress false-positive type errors — Monaco's browser TS service
-          // has no access to node_modules or path aliases so it flags valid
-          // imports as errors. Syntax validation (highlighting) stays on.
+          // Enable semantic validation so TypeScript errors show as red squiggles,
+          // matching VS Code behaviour. We suppress only the "cannot find module"
+          // errors that Monaco raises because it has no access to node_modules —
+          // those are noise, not real errors in the user's code.
           monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
-            noSemanticValidation: true,
+            noSemanticValidation: false,
             noSyntaxValidation: false,
+            // Suppress: "Cannot find module '...'" (2307)
+            //           "Could not find declaration file" (7016)
+            //           "Cannot find name 'React'" etc when no lib (2304)
+            //           "Module ... has no exported member" from missing @types (2305)
+            diagnosticCodesToIgnore: [2307, 7016, 2304, 2305, 2339, 2769],
           })
           monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
-            noSemanticValidation: true,
+            noSemanticValidation: false,
             noSyntaxValidation: false,
+            diagnosticCodesToIgnore: [2307, 7016, 2304, 2305, 2339, 2769],
           })
           monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
             baseUrl: '.',
@@ -167,6 +174,20 @@ export default function MonacoEditorWrapper({
             moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
             allowSyntheticDefaultImports: true,
             esModuleInterop: true,
+            strict: true,
+            target: monaco.languages.typescript.ScriptTarget.ESNext,
+            lib: ['esnext', 'dom', 'dom.iterable'],
+            noEmit: true,
+          })
+          // Also apply to JS
+          monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
+            baseUrl: '.',
+            jsx: monaco.languages.typescript.JsxEmit.ReactJSX,
+            moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+            allowSyntheticDefaultImports: true,
+            esModuleInterop: true,
+            target: monaco.languages.typescript.ScriptTarget.ESNext,
+            lib: ['esnext', 'dom', 'dom.iterable'],
           })
         }}
         onMount={(editor) => {

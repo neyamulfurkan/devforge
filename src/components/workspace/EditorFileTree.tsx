@@ -260,6 +260,9 @@ export function EditorFileTree({ projectId, onFind, onFindReplace }: EditorFileT
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set())
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
 
+  // Ref to the scroll container so we can imperatively scroll to the active row
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+
   // Auto-expand folders containing the active file
   const activeFilePath = isLocalMode ? openLocalPath : (files.find(f => f.id === openFileId)?.filePath ?? null)
 
@@ -275,6 +278,24 @@ export function EditorFileTree({ projectId, onFind, onFindReplace }: EditorFileT
       return next
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFilePath])
+
+  // Scroll the active file row into view whenever it changes
+  useEffect(() => {
+    if (!activeFilePath || !scrollContainerRef.current) return
+    // Use a short timeout so the DOM has re-rendered with expanded folders
+    const timer = setTimeout(() => {
+      const container = scrollContainerRef.current
+      if (!container) return
+      // Find the button whose title matches the active file path
+      const activeBtn = container.querySelector<HTMLElement>(
+        `button[title="${CSS.escape(activeFilePath)}"], button[aria-current="true"]`
+      )
+      if (activeBtn) {
+        activeBtn.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      }
+    }, 80)
+    return () => clearTimeout(timer)
   }, [activeFilePath])
 
   // ── Tree construction (DB mode vs local mode) ────────────────────────────
@@ -645,7 +666,7 @@ export function EditorFileTree({ projectId, onFind, onFindReplace }: EditorFileT
       </div>
 
       {/* Tree */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-1 py-1">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-1 py-1">
         {flatRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
             <File className="h-8 w-8 text-[var(--text-tertiary)] mb-2" />

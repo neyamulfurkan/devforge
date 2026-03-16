@@ -644,6 +644,19 @@ function generateCommitMessage(input: string): string {
   return shortDesc ? `${prefix}: ${shortDesc}${filePart}` : `${prefix}: update${filePart}`
 }
 
+const COMMIT_COUNTER_KEY = 'devforge-commit-counter'
+
+function getNextCommitNumber(): number {
+  try {
+    const stored = parseInt(localStorage.getItem(COMMIT_COUNTER_KEY) ?? '0', 10)
+    const next = (isNaN(stored) ? 0 : stored) + 1
+    localStorage.setItem(COMMIT_COUNTER_KEY, String(next))
+    return next
+  } catch {
+    return 1
+  }
+}
+
 function GitPushButton({ projectId }: { projectId: string }): JSX.Element {
   const [commitMsg, setCommitMsg] = React.useState('')
   const [copyState, setCopyState] = React.useState<'idle' | 'done'>('idle')
@@ -662,7 +675,9 @@ function GitPushButton({ projectId }: { projectId: string }): JSX.Element {
   }, [projectId])
 
   const handleCopy = React.useCallback(async () => {
-    const msg = commitMsg.trim() || 'devforge update'
+    const baseMsg = commitMsg.trim() || 'devforge update'
+    const num = getNextCommitNumber()
+    const msg = `${baseMsg} ${num}`
     const cmd = `git add . && git commit -m "${msg.replace(/"/g, "'")}" && git push`
     await navigator.clipboard.writeText(cmd)
     setCopyState('done')
