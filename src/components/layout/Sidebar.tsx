@@ -29,6 +29,10 @@ import { useUIStore } from '@/store/uiStore'
 import { cn } from '@/lib/utils'
 
 // 6. Local types
+export interface SidebarProps {
+  collapsed?: boolean
+}
+
 interface NavItem {
   href: string
   label: string
@@ -45,7 +49,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/help', label: 'Help / Docs', icon: HelpCircle },
 ]
 
-export function Sidebar(): JSX.Element {
+export function Sidebar({ collapsed = false }: SidebarProps): JSX.Element {
   const pathname = usePathname()
   const { user, logout } = useAuth()
   const { setSidebarOpen } = useUIStore()
