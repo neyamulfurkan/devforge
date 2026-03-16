@@ -76,7 +76,7 @@ const DocumentSection = dynamic(
   { ssr: false }
 ) as React.ComponentType<{ projectId: string; onAddFeature?: () => void }>
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// ─── Constants ─────────────────────────────────────────────────────────────────────── TEST OK
 
 const VALID_TABS: WorkspaceTab[] = [
   'overview',
@@ -777,6 +777,7 @@ function EditorModeSwitcher({ projectId }: { projectId: string }): JSX.Element {
           Disconnect
         </button>
       )}
+      <GitPushButton projectId={projectId} />
     {/* Mismatch warning — shown when opened folder doesn't match project */}
       {mismatchInfo && (
         <div className="flex items-center gap-3 px-3 py-2 bg-[var(--status-error-bg)] border-b border-[var(--status-error)]/20">
@@ -1103,7 +1104,6 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
           <div className="w-full h-full opacity-0 group-hover:opacity-100 bg-[var(--accent-primary)]/50 transition-opacity duration-150" />
         </div>
 
-        <GitPushButton projectId={projectId} />
         {splitMode ? (
           <div className="flex flex-col w-full h-full overflow-hidden" style={{ position: 'absolute', inset: 0 }}>
             <div
