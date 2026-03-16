@@ -269,6 +269,7 @@ This ordering rule applies to EVERY file in the sequence. Review the complete fi
 
 /**
  * Generates Step 1 of the error resolution workflow — file identification prompt.
+ * CRITICAL: Enforces JSON-only response format to ensure DevForge parser compatibility.
  */
 export async function generateErrorIdentifyPrompt(
   input: ErrorIdentifyInput,
@@ -284,11 +285,60 @@ export async function generateErrorIdentifyPrompt(
     GLOBAL_CONTEXT_DOCUMENT: input.globalContextDocument,
   }
 
-  return substituteVariables(template.content, variables)
+  const basePrompt = substituteVariables(template.content, variables)
+
+  // ─── JSON-only enforcement rule ──────────────────────────────────────────
+  // DevForge parser ONLY accepts JSON responses. This rule is non-negotiable.
+  // All special characters (backticks, regex, template literals) are handled
+  // transparently within JSON string escaping — no alternative format allowed.
+  const jsonOnlyRule = `
+${'═'.repeat(70)}
+CRITICAL — JSON-ONLY RESPONSE FORMAT (NON-NEGOTIABLE):
+${'═'.repeat(70)}
+
+You MUST respond with ONLY a valid JSON array. NO other format is accepted.
+
+RESPONSE FORMAT (mandatory):
+\`\`\`json
+[
+  {
+    "file": "exact/path/from/project/root.ts",
+    "search": "exact existing code to find",
+    "replace": "exact replacement code"
+  }
+]
+\`\`\`
+
+RULES:
+1. Response MUST be ONLY a JSON array — NO prose, NO explanation, NO markdown outside the array
+2. NO text before the JSON array (no preamble)
+3. NO text after the JSON array (no explanation)
+4. All special characters (backticks, regex patterns, template literals, quotes) are handled automatically by JSON string escaping — NO alternative format
+5. Each search string must appear EXACTLY ONCE in the file — add surrounding context if needed
+6. Replace strings can be ANY length and must be 100% complete with no placeholders
+7. One object per change location — multiple objects for multiple changes
+
+IMPORTANT: JSON strings handle all special characters safely. You do NOT need a plain-text format. All characters including backticks \`\`, dollar signs \$, regex patterns, and template literals \$\{...\} must be written as JSON string values (with proper escaping inside quotes).
+
+Example with backticks in code:
+\`\`\`json
+[
+  {
+    "file": "src/file.ts",
+    "search": "const x = \`template literal\`",
+    "replace": "const x = \`new template\`"
+  }
+]
+\`\`\`
+
+Do NOT invent alternative formats. JSON is sufficient for ALL cases.`
+
+  return `${basePrompt}${jsonOnlyRule}`
 }
 
 /**
  * Generates Step 2 of the error resolution workflow — line replacement prompt.
+ * CRITICAL: Enforces JSON-only response format to ensure DevForge parser compatibility.
  */
 export async function generateErrorReplacePrompt(
   input: ErrorReplaceInput,
@@ -303,7 +353,55 @@ export async function generateErrorReplacePrompt(
     GLOBAL_CONTEXT_DOCUMENT: input.globalContextDocument,
   }
 
-  return substituteVariables(template.content, variables)
+  const basePrompt = substituteVariables(template.content, variables)
+
+  // ─── JSON-only enforcement rule ──────────────────────────────────────────
+  // DevForge parser ONLY accepts JSON responses. This rule is non-negotiable.
+  // All special characters (backticks, regex, template literals) are handled
+  // transparently within JSON string escaping — no alternative format allowed.
+  const jsonOnlyRule = `
+${'═'.repeat(70)}
+CRITICAL — JSON-ONLY RESPONSE FORMAT (NON-NEGOTIABLE):
+${'═'.repeat(70)}
+
+You MUST respond with ONLY a valid JSON array. NO other format is accepted.
+
+RESPONSE FORMAT (mandatory):
+\`\`\`json
+[
+  {
+    "file": "exact/path/from/project/root.ts",
+    "search": "exact existing code to find",
+    "replace": "exact replacement code"
+  }
+]
+\`\`\`
+
+RULES:
+1. Response MUST be ONLY a JSON array — NO prose, NO explanation, NO markdown outside the array
+2. NO text before the JSON array (no preamble)
+3. NO text after the JSON array (no explanation)
+4. All special characters (backticks, regex patterns, template literals, quotes) are handled automatically by JSON string escaping — NO alternative format
+5. Each search string must appear EXACTLY ONCE in the file — add surrounding context if needed
+6. Replace strings can be ANY length and must be 100% complete with no placeholders
+7. One object per change location — multiple objects for multiple changes
+
+IMPORTANT: JSON strings handle all special characters safely. You do NOT need a plain-text format. All characters including backticks \`\`, dollar signs \$, regex patterns, and template literals \$\{...\} must be written as JSON string values (with proper escaping inside quotes).
+
+Example with backticks in code:
+\`\`\`json
+[
+  {
+    "file": "src/file.ts",
+    "search": "const x = \`template literal\`",
+    "replace": "const x = \`new template\`"
+  }
+]
+\`\`\`
+
+Do NOT invent alternative formats. JSON is sufficient for ALL cases.`
+
+  return `${basePrompt}${jsonOnlyRule}`
 }
 
 /**

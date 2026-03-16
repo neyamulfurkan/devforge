@@ -123,8 +123,8 @@ export function ErrorFixPrompts({
         label={isTscSession ? 'Step 1 — TSC File Identification' : 'Step 1 — File Identification'}
         instruction={
           isTscSession
-            ? 'Show this to Claude with GCD sections §1 §3 §4 §5 §9 §11'
-            : 'Show this to Claude along with your complete Global Context Document'
+            ? 'Show this to Claude with GCD sections §1 §3 §4 §5 §9 §11. Claude MUST respond in JSON-only format.'
+            : 'Show this to Claude along with your complete Global Context Document. Claude MUST respond in JSON-only format.'
         }
         promptText={identifyPrompt}
       />
@@ -135,8 +135,8 @@ export function ErrorFixPrompts({
         label={isTscSession ? 'Step 2 — TSC Surgical Fix' : 'Step 2 — Surgical Line Replacement'}
         instruction={
           isTscSession
-            ? 'Show this to Claude with GCD §5 §9 and the files from Step 1'
-            : 'Show this to Claude along with the files identified in Step 1'
+            ? 'Show this to Claude with GCD §5 §9 and the files from Step 1. Claude MUST respond in JSON-only format.'
+            : 'Show this to Claude along with the files identified in Step 1. Claude MUST respond in JSON-only format.'
         }
         promptText={replacePrompt}
       />
