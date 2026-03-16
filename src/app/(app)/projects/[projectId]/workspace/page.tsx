@@ -983,7 +983,7 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
   // Apply Fixes panel state
   const [applyFixesOpen, setApplyFixesOpen] = React.useState(false)
   const [splitMode, setSplitMode] = React.useState(false)
-  const [applyFixesHeight, setApplyFixesHeight] = React.useState(300)
+  const [applyFixesHeight, setApplyFixesHeight] = React.useState(240)
 
   // Sidebar width — resizable via drag handle
   const [sidebarWidth, setSidebarWidth] = React.useState(240)
@@ -1065,7 +1065,7 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
           <div className="flex flex-col h-full overflow-hidden">
             <div
               className="flex flex-col overflow-hidden"
-              style={{ height: `calc(100% - ${applyFixesHeight}px - 6px)`, minHeight: 80 }}
+              style={{ height: `calc(100% - ${applyFixesHeight}px - 6px)`, minHeight: 120 }}
             >
               <EditorFileTree
                 projectId={projectId}
@@ -1545,19 +1545,25 @@ const [copiedFiles, setCopiedFiles] = React.useState(false)
 
       try {
         const file = await handle.getFile()
-        const content = await file.text()
+        const rawContent = await file.text()
 
-        // Count occurrences — warn if search string appears more than once (ambiguous)
-        const occurrenceCount = content.split(entry.search).length - 1
+        // Normalize line endings — fixes Windows CRLF vs Unix LF mismatch
+        const normalize = (s: string) => s.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+        const content = normalize(rawContent)
+        const normalizedSearch = normalize(entry.search)
+        const normalizedReplace = normalize(entry.replace)
+
+        // Count occurrences — warn if ambiguous
+        const occurrenceCount = content.split(normalizedSearch).length - 1
         if (occurrenceCount > 1) {
           newResults.push({
             file: entry.file,
             status: 'error',
-            message: `Ambiguous: "${entry.search.slice(0, 40)}…" found ${occurrenceCount} times in ${entry.file} — make search string more specific`,
+            message: `Ambiguous: "${normalizedSearch.slice(0, 40)}…" found ${occurrenceCount} times in ${entry.file} — make search string more specific`,
           })
           continue
         }
-        if (!content.includes(entry.search)) {
+        if (!content.includes(normalizedSearch)) {
           newResults.push({
             file: entry.file,
             status: 'not_found',
@@ -1566,8 +1572,8 @@ const [copiedFiles, setCopiedFiles] = React.useState(false)
           continue
         }
 
-        // Replace first occurrence only (safe — search should be unique)
-        const newContent = content.replace(entry.search, entry.replace)
+        // Replace and write back
+        const newContent = content.replace(normalizedSearch, normalizedReplace)
         const writable = await handle.createWritable()
         await writable.write(newContent)
         await writable.close()

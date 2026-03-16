@@ -355,6 +355,32 @@ export function useEditor(projectId: string) {
       const tree = await walkDirectory(savedHandle)
       setLocalFileTree(projectId, tree)
       switchToLocalMode(projectId)
+
+      // Restore last open file from localStorage
+      const lastPath = localStorage.getItem(`devforge-last-open-${projectId}`)
+      if (lastPath) {
+        const findNodeByPath = (nodes: LocalFileNode[], targetPath: string): LocalFileNode | null => {
+          for (const node of nodes) {
+            if (node.type === 'file' && node.path === targetPath) return node
+            if (node.type === 'folder' && node.children) {
+              const found = findNodeByPath(node.children, targetPath)
+              if (found) return found
+            }
+          }
+          return null
+        }
+        const lastNode = findNodeByPath(tree, lastPath)
+        if (lastNode && lastNode.type === 'file') {
+          try {
+            const handle = lastNode.handle as FileSystemFileHandle
+            const file = await handle.getFile()
+            const text = await file.text()
+            storeOpenLocalFile(projectId, handle, lastPath)
+            setContent(text)
+            markClean()
+          } catch { /* stale handle — skip */ }
+        }
+      }
     } catch {
       // Handle may be stale (folder deleted/moved) — clear it
       await clearHandleForProject(projectId)
@@ -366,6 +392,7 @@ export function useEditor(projectId: string) {
   const openLocalFile = useCallback(
     async (handle: FileSystemFileHandle, path: string) => {
       storeOpenLocalFile(projectId, handle, path)
+      localStorage.setItem(`devforge-last-open-${projectId}`, path)
 
       try {
         const file = await handle.getFile()
