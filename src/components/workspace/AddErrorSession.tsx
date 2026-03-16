@@ -27,7 +27,7 @@ type InputMode = 'standard' | 'tsc' | 'auto'
 
 const AUTO_FIX_PROMPT = `You are reviewing error logs from a Next.js TypeScript codebase. Identify which files need to be read to fix ALL errors shown.
 
-Respond with ONLY this JSON — no prose:
+Respond with ONLY this JSON — no prose, no explanation, no markdown outside the JSON block:
 
 \`\`\`json
 {
@@ -135,7 +135,11 @@ export function AddErrorSession({ projectId, onAdded }: AddErrorSessionProps): J
       '- search must appear EXACTLY ONCE in the file',
       '- replace must be 100% complete code — no // ...existing code..., no // TODO',
       '- Fix every error shown in the logs above',
-      '- ONLY the JSON array — nothing else',
+      '- search must be 1-4 lines MAXIMUM',
+      '- search must appear EXACTLY ONCE in the file',
+      '- replace must be 100% complete code — no // ...existing code..., no // TODO',
+      '- Fix every error shown in the logs above',
+      '- Respond with ONLY the JSON array — no prose, no explanation, no markdown outside the array',
     ].join('\n')
     await navigator.clipboard.writeText('Here are the files you requested:\n\n' + blocks + fixPrompt)
     setAutoCopiedFiles(true)
