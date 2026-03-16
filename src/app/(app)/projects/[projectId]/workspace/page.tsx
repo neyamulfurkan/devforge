@@ -76,7 +76,7 @@ const DocumentSection = dynamic(
   { ssr: false }
 ) as React.ComponentType<{ projectId: string; onAddFeature?: () => void }>
 
-// ─── Constants ─────────────────────────────────────────────────────────────────────── TEST OK
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const VALID_TABS: WorkspaceTab[] = [
   'overview',
@@ -618,14 +618,51 @@ STRICT RULES:
 // ─── Editor mode switcher bar ─────────────────────────────────────────────────
 // Sits above the editor. Lets user toggle between DB files and local folder.
 
+function generateCommitMessage(input: string): string {
+  if (!input.trim()) return ''
+  // Extract file paths mentioned
+  const fileMatches = input.match(/src\/[\w/.-]+/g) ?? []
+  const uniqueFiles = [...new Set(fileMatches)].slice(0, 2)
+  // Detect intent from keywords
+  const lower = input.toLowerCase()
+  const isfix = /fix|bug|error|issue|broken|crash|fail|wrong|incorrect|not found|duplicate/.test(lower)
+  const isfeat = /add|new|feature|button|implement|create|build|support/.test(lower)
+  const isrefactor = /refactor|clean|rename|move|restructure|simplify/.test(lower)
+  const isstyle = /style|css|color|layout|spacing|ui|design|look/.test(lower)
+  const prefix = isfix ? 'fix' : isfeat ? 'feat' : isrefactor ? 'refactor' : isstyle ? 'style' : 'update'
+  // Extract a short description from first meaningful line
+  const firstLine = input.split('\n').find((l) => l.trim().length > 8 && !l.startsWith('//') && !l.startsWith('*')) ?? ''
+  const shortDesc = firstLine
+    .replace(/[^a-zA-Z0-9\s_/-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 50)
+    .toLowerCase()
+  const filePart = uniqueFiles.length > 0
+    ? ` in ${uniqueFiles.map((f) => f.split('/').pop()).join(', ')}`
+    : ''
+  return shortDesc ? `${prefix}: ${shortDesc}${filePart}` : `${prefix}: update${filePart}`
+}
+
 function GitPushButton({ projectId }: { projectId: string }): JSX.Element {
   const [commitMsg, setCommitMsg] = React.useState('')
   const [copyState, setCopyState] = React.useState<'idle' | 'done'>('idle')
+  const [generating, setGenerating] = React.useState(false)
 
   // Auto-populate commit message from last Claude response pasted in ApplyFixes
   // User can also type manually
+  const handleGenerate = React.useCallback(() => {
+    setGenerating(true)
+    const lastFixInput = sessionStorage.getItem(`devforge-last-fix-input-${projectId}`) ?? ''
+    const lastFixResults = sessionStorage.getItem(`devforge-last-fix-results-${projectId}`) ?? ''
+    const source = lastFixInput || lastFixResults
+    const generated = generateCommitMessage(source)
+    if (generated) setCommitMsg(generated)
+    setTimeout(() => setGenerating(false), 400)
+  }, [projectId])
+
   const handleCopy = React.useCallback(async () => {
-    const msg = commitMsg.trim() || 'update'
+    const msg = commitMsg.trim() || 'devforge update'
     const cmd = `git add . && git commit -m "${msg.replace(/"/g, "'")}" && git push`
     await navigator.clipboard.writeText(cmd)
     setCopyState('done')
@@ -643,6 +680,14 @@ function GitPushButton({ projectId }: { projectId: string }): JSX.Element {
         className="flex-1 min-w-0 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
         onKeyDown={(e) => { if (e.key === 'Enter') handleCopy() }}
       />
+      <button
+        type="button"
+        onClick={handleGenerate}
+        title="Auto-generate commit message from last fix"
+        className="flex-shrink-0 flex items-center justify-center w-5 h-5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] transition-colors duration-150"
+      >
+        {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+      </button>
       <button
         type="button"
         onClick={handleCopy}
@@ -2001,7 +2046,7 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
         </p>
         <textarea
           value={input}
-          onChange={(e) => { setInput(e.target.value); setResults([]) }}
+          onChange={(e) => { setInput(e.target.value); setResults([]); sessionStorage.setItem(`devforge-last-fix-input-${projectId}`, e.target.value) }}
           placeholder={compact ? 'Paste JSON or plain-text format here…' : `Paste Claude's JSON response OR plain-text format:\n\nJSON format:\n[\n  { "file": "src/Button.tsx", "search": "const x = 1", "replace": "const x = 2" }\n]\n\nPlain-text format (works with backticks and regex):\nFILE: src/Button.tsx\nSEARCH:\nconst x = 1\nREPLACE:\nconst x = 2\n---`}
           rows={compact ? 5 : 10}
           spellCheck={false}
