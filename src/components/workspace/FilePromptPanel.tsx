@@ -28,6 +28,118 @@ interface FilePromptPanelProps {
   onClose: () => void
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function isUiFile(filePath: string): boolean {
+  return (
+    filePath.endsWith('.tsx') ||
+    filePath.includes('src/components/') ||
+    filePath.includes('src/app/')
+  )
+}
+
+function extractSection(gcdContent: string, sectionNumber: string): string {
+  const lines = gcdContent.split('\n')
+  const headerPattern = new RegExp(`^## SECTION ${sectionNumber}\\b`)
+  const nextSectionPattern = /^## SECTION \d/
+  let inSection = false
+  const sectionLines: string[] = []
+  for (const line of lines) {
+    if (headerPattern.test(line)) {
+      inSection = true
+      sectionLines.push(line)
+      continue
+    }
+    if (inSection) {
+      if (nextSectionPattern.test(line)) break
+      sectionLines.push(line)
+    }
+  }
+  return sectionLines.join('\n').trim()
+}
+
+function buildCombinedPrompt({
+  gcdContent,
+  filePrompt,
+  filePath,
+  fileNumber,
+}: {
+  gcdContent: string
+  filePrompt: string
+  filePath: string
+  fileNumber: string
+}): string {
+  const sep = '═'.repeat(60)
+  const needsDesignSections = isUiFile(filePath)
+  const designBlock = needsDesignSections
+    ? (() => {
+        const sec7 = extractSection(gcdContent, '7')
+        const sec8 = extractSection(gcdContent, '8')
+        const parts: string[] = []
+        if (sec7) {
+          parts.push(sep)
+          parts.push('DESIGN SYSTEM REFERENCE (Section 7) — APPLY TO EVERY ELEMENT YOU GENERATE:')
+          parts.push(sep)
+          parts.push('')
+          parts.push(sec7)
+          parts.push('')
+        }
+        if (sec8) {
+          parts.push(sep)
+          parts.push('PERFORMANCE & OPTIMIZATION REFERENCE (Section 8) — FOLLOW THESE RULES:')
+          parts.push(sep)
+          parts.push('')
+          parts.push(sec8)
+          parts.push('')
+        }
+        return parts.join('\n')
+      })()
+    : ''
+  const lines = [
+    gcdContent,
+    '',
+    ...(designBlock ? [designBlock] : []),
+    sep,
+    `TASK: GENERATE FILE ${fileNumber} — ${filePath}`,
+    sep,
+    '',
+    'FILE-SPECIFIC PROMPT (read STEP 1 first — it governs whether you may write code):',
+    '',
+    filePrompt,
+    '',
+    sep,
+    'OUTPUT FORMAT — YOU MUST FOLLOW THIS EXACTLY:',
+    sep,
+    '',
+    '1. Output the COMPLETE file implementation — every function, every handler, every import fully written. No placeholders, no "// TODO", no truncation.',
+  ]
+  if (needsDesignSections) {
+    lines.push('')
+    lines.push('1a. Every className must use CSS custom properties from Section 7 (e.g. var(--bg-primary), var(--accent-primary), var(--text-secondary)). NO hardcoded hex colors.')
+    lines.push('1b. All interactive elements must follow Section 7.3 component patterns (buttons, inputs, cards, badges).')
+    lines.push('1c. Animations must follow Section 7.4 (Framer Motion patterns only).')
+  }
+  lines.push('')
+  lines.push('2. Immediately after the code block output this JSON registry entry (no commentary between them):')
+  lines.push('')
+  lines.push('```json')
+  lines.push('{')
+  lines.push(`  "file": "${filePath}",`)
+  lines.push(`  "fileNumber": "${fileNumber}",`)
+  lines.push('  "exports": [],')
+  lines.push('  "imports": [],')
+  lines.push('  "keyLogic": "brief description of what this file does",')
+  lines.push('  "sideEffects": [],')
+  lines.push('  "dependents": [],')
+  lines.push('  "status": "complete",')
+  lines.push(`  "generatedAt": "${new Date().toISOString()}"`)
+  lines.push('}')
+  lines.push('```')
+  lines.push('')
+  lines.push('Do NOT add any commentary after the JSON block. The JSON is the last thing in your response.')
+  return lines.join('\n')
+}
+
 // ─── GCD + Prompt Button ──────────────────────────────────────────────────────
 
 function GcdPlusPromptButton({
@@ -46,12 +158,35 @@ function GcdPlusPromptButton({
   const [copied, setCopied] = useState(false)
 
   const handleClick = useCallback(() => {
-    const sep = '═'.repeat(60)
-    const combined = [
-      gcdContent,
-      '',
-      sep,
-      `TASK: GENERATE FILE ${fileNumber} — ${filePath}`,
+    const combined = buildCombinedPrompt({ gcdContent, filePrompt, filePath, fileNumber })
+    navigator.clipboard.writeText(combined).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }).catch(() => undefined)
+  }, [gcdContent, filePrompt, filePath, fileNumber])
+
+  const needsDesign = isUiFile(filePath)
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      title={needsDesign ? 'Copy GCD + Sections 7 & 8 (design system) + file prompt' : 'Copy GCD + file prompt'}
+      className={cn(
+        'inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-medium border transition-all duration-150',
+        copied
+          ? 'border-[var(--status-complete)]/40 bg-[var(--status-complete-bg)] text-[var(--status-complete)]'
+          : needsDesign
+          ? 'border-[var(--accent-border)] bg-[var(--accent-light)] text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-white'
+          : 'border-[var(--border-default)] bg-[var(--bg-quaternary)] text-[var(--text-tertiary)] hover:border-[var(--accent-border)] hover:bg-[var(--accent-light)] hover:text-[var(--accent-primary)]'
+      )}
+    >
+      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      {copied ? 'Copied!' : needsDesign ? 'GCD+🎨' : 'GCD+'}
+    </button>
+  )
+}
+      // ─── Component ────────────────────────────────────────────────────────────────
       sep,
       '',
       'FILE-SPECIFIC PROMPT (read STEP 1 first — it governs whether you may write code):',
@@ -117,6 +252,19 @@ export function FilePromptPanel({
 }: FilePromptPanelProps): JSX.Element {
   const panelRef = useRef<HTMLDivElement>(null)
   const { document: docData } = useDocument(projectId)
+
+  // ── Auto-copy to clipboard when panel opens ──────────────────────────────
+  useEffect(() => {
+    if (!file || !file.filePrompt || !docData?.rawContent) return
+    const combined = buildCombinedPrompt({
+      gcdContent: docData.rawContent,
+      filePrompt: file.filePrompt,
+      filePath: file.filePath,
+      fileNumber: file.fileNumber,
+    })
+    navigator.clipboard.writeText(combined).catch(() => undefined)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file?.id])
 
   // ── Trap focus + close on Escape ────────────────────────────────────────────
   useEffect(() => {

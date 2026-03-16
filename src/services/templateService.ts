@@ -314,12 +314,21 @@ CURRENT FILE CONTENTS:
 GLOBAL CONTEXT DOCUMENT:
 {{GLOBAL_CONTEXT_DOCUMENT}}
 
-Provide exact line replacements to fix the error. For each change, use this format:
-FILE: [file path]
-FIND THIS EXACT LINE: [exact line with all whitespace/indentation]
-REPLACE WITH: [exact replacement with all whitespace/indentation]
+Wrap your entire response in a single fenced plaintext code block so it renders as a copyable artifact. Inside it use this exact format for every fix:
 
-Do not rewrite entire files. Only provide surgical replacements for the specific lines that need to change. If multiple lines in a block must change, list each line change separately.`,
+FILE: src/path/to/file.ts
+SEARCH:
+[exact lines to find, preserving all whitespace and indentation]
+REPLACE:
+[exact replacement lines, preserving all whitespace and indentation]
+---
+
+Rules:
+- Every fix must end with --- on its own line
+- One FILE/SEARCH/REPLACE/--- block per change location
+- SEARCH must be exact text from the file character for character
+- REPLACE must be complete, no placeholders, no ellipsis
+- Wrap everything in a fenced code block — nothing before the opening fence, nothing after the closing fence`,
 
   feature_delta: `You are an expert software architect. A developer wants to add a new feature to their existing project.
 
@@ -436,15 +445,21 @@ Provide exact line-level replacements to fix every TypeScript error. Follow thes
 5. Never rewrite an entire function or file. Surgical replacements only.
 6. After all replacements, state: "Running npx tsc --noEmit after these changes should produce 0 errors."
 
-FORMAT — use this exactly for every change:
+Wrap your entire response in a single fenced plaintext code block so it renders as a copyable artifact. Inside it use this exact format for every fix:
 
 FILE: src/path/to/file.ts
-FIND THIS EXACT LINE:
-[paste the exact line with its indentation]
-REPLACE WITH:
-[paste the exact replacement with its indentation]
-REASON: TS2345 — [one sentence explanation]
----`,
+SEARCH:
+[exact lines to find, preserving all whitespace and indentation]
+REPLACE:
+[exact replacement lines, preserving all whitespace and indentation]
+---
+
+Rules:
+- Every fix must end with --- on its own line
+- One FILE/SEARCH/REPLACE/--- block per change location
+- SEARCH must be exact text from the file character for character
+- REPLACE must be complete, no placeholders, no ellipsis
+- Wrap everything in a fenced code block — nothing before the opening fence, nothing after the closing fence`,
 }
 // ─── Variable substitution (also exported for promptGenerator.ts) ─────────────
 
