@@ -1,7 +1,7 @@
 'use client'
 
 // 1. React imports
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 
 // 2. Third-party library imports
 import { ChevronRight, ChevronDown, Folder, FolderOpen, File } from 'lucide-react'
