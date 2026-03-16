@@ -76,7 +76,7 @@ const DocumentSection = dynamic(
   { ssr: false }
 ) as React.ComponentType<{ projectId: string; onAddFeature?: () => void }>
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// ─── Constants ─────────────────────────────────────────────────────────────────────── TEST OK
 
 const VALID_TABS: WorkspaceTab[] = [
   'overview',
@@ -618,66 +618,14 @@ STRICT RULES:
 // ─── Editor mode switcher bar ─────────────────────────────────────────────────
 // Sits above the editor. Lets user toggle between DB files and local folder.
 
-function generateCommitMessage(input: string): string {
-  if (!input.trim()) return ''
-  // Extract file paths mentioned
-  const fileMatches = input.match(/src\/[\w/.-]+/g) ?? []
-  const uniqueFiles = [...new Set(fileMatches)].slice(0, 2)
-  // Detect intent from keywords
-  const lower = input.toLowerCase()
-  const isfix = /fix|bug|error|issue|broken|crash|fail|wrong|incorrect|not found|duplicate/.test(lower)
-  const isfeat = /add|new|feature|button|implement|create|build|support/.test(lower)
-  const isrefactor = /refactor|clean|rename|move|restructure|simplify/.test(lower)
-  const isstyle = /style|css|color|layout|spacing|ui|design|look/.test(lower)
-  const prefix = isfix ? 'fix' : isfeat ? 'feat' : isrefactor ? 'refactor' : isstyle ? 'style' : 'update'
-  // Extract a short description from first meaningful line
-  const firstLine = input.split('\n').find((l) => l.trim().length > 8 && !l.startsWith('//') && !l.startsWith('*')) ?? ''
-  const shortDesc = firstLine
-    .replace(/[^a-zA-Z0-9\s_/-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 50)
-    .toLowerCase()
-  const filePart = uniqueFiles.length > 0
-    ? ` in ${uniqueFiles.map((f) => f.split('/').pop()).join(', ')}`
-    : ''
-  return shortDesc ? `${prefix}: ${shortDesc}${filePart}` : `${prefix}: update${filePart}`
-}
-
-const COMMIT_COUNTER_KEY = 'devforge-commit-counter'
-
-function getNextCommitNumber(): number {
-  try {
-    const stored = parseInt(localStorage.getItem(COMMIT_COUNTER_KEY) ?? '0', 10)
-    const next = (isNaN(stored) ? 0 : stored) + 1
-    localStorage.setItem(COMMIT_COUNTER_KEY, String(next))
-    return next
-  } catch {
-    return 1
-  }
-}
-
 function GitPushButton({ projectId }: { projectId: string }): JSX.Element {
   const [commitMsg, setCommitMsg] = React.useState('')
   const [copyState, setCopyState] = React.useState<'idle' | 'done'>('idle')
-  const [generating, setGenerating] = React.useState(false)
 
   // Auto-populate commit message from last Claude response pasted in ApplyFixes
   // User can also type manually
-  const handleGenerate = React.useCallback(() => {
-    setGenerating(true)
-    const lastFixInput = sessionStorage.getItem(`devforge-last-fix-input-${projectId}`) ?? ''
-    const lastFixResults = sessionStorage.getItem(`devforge-last-fix-results-${projectId}`) ?? ''
-    const source = lastFixInput || lastFixResults
-    const generated = generateCommitMessage(source)
-    if (generated) setCommitMsg(generated)
-    setTimeout(() => setGenerating(false), 400)
-  }, [projectId])
-
   const handleCopy = React.useCallback(async () => {
-    const baseMsg = commitMsg.trim() || 'devforge update'
-    const num = getNextCommitNumber()
-    const msg = `${baseMsg} ${num}`
+    const msg = commitMsg.trim() || 'update'
     const cmd = `git add . && git commit -m "${msg.replace(/"/g, "'")}" && git push`
     await navigator.clipboard.writeText(cmd)
     setCopyState('done')
@@ -695,14 +643,6 @@ function GitPushButton({ projectId }: { projectId: string }): JSX.Element {
         className="flex-1 min-w-0 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
         onKeyDown={(e) => { if (e.key === 'Enter') handleCopy() }}
       />
-      <button
-        type="button"
-        onClick={handleGenerate}
-        title="Auto-generate commit message from last fix"
-        className="flex-shrink-0 flex items-center justify-center w-5 h-5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] transition-colors duration-150"
-      >
-        {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-      </button>
       <button
         type="button"
         onClick={handleCopy}
@@ -1336,19 +1276,30 @@ interface ApplyFixesResult {
 }
 
 // Prompt templates that enforce Claude to always respond in parseable format
-const GCD_FILE_REQUEST_PROMPT = 'You are reviewing a codebase to identify which files need to be read before fixing the issues described.\n\nRespond with ONLY a JSON object in this exact format - no prose, no explanation:\n\n```json\n{\n  "files": [\n    "exact/path/from/project/root.ts",\n    "another/file/path.tsx"\n  ],\n  "reason": "one sentence explaining why these files are needed"\n}\n```\n\nRULES:\n- List ONLY files that are directly relevant to the fix\n- Use exact paths as they appear in the project structure\n- Maximum 10 files\n- NO text before or after the JSON object\n\nHere is the Global Context Document and the issue to fix:'
+const GCD_FILE_REQUEST_PROMPT = `You are reviewing a codebase to identify which files need to be read before fixing the issues described.
+
+Respond with ONLY a JSON object in this exact format — no prose, no explanation:
+
+\`\`\`json
+{
+  "files": [
+    "exact/path/from/project/root.ts",
+    "another/file/path.tsx"
+  ],
+  "reason": "one sentence explaining why these files are needed"
+}
+\`\`\`
+
+RULES:
+- List ONLY files that are directly relevant to the fix
+- Use exact paths as they appear in the project structure
+- Maximum 10 files
+- NO text before or after the JSON object
+
+Here is the Global Context Document and the issue to fix:`
 
 const FIX_PROMPTS = {
-  bug: 'You are fixing bugs in a codebase. Respond with ONLY a JSON array — no prose, no explanation, no markdown outside the array. NEVER switch to plain-text format. ALWAYS stay in JSON. Escape backticks as \\u0060, newlines as \\n, backslashes as \\\\\\\\ inside JSON string values.\n\nFORMAT (mandatory):\n```json\n[\n  {\n    "file": "exact/path/from/project/root.ts",\n    "search": "exact existing code to find",\n    "replace": "exact replacement code"\n  }\n]\n```\n\nCRITICAL RULES FOR search STRING:\n- Keep search to 1-4 lines MAXIMUM — it is only an anchor, not the full block\n- Pick the most unique line(s) near the change — function signature, unique className, unique comment\n- search must appear EXACTLY ONCE in the entire file — if not unique, add 1 more surrounding line\n- NEVER put more than 4 lines in search — split into multiple entries instead\n- NEVER truncate, summarize, or use ellipsis in search — copy character for character\n- replace can be ANY length — put the complete new code here, no limits\n- To replace a large block: use the first unique line as search, write the entire new block in replace\n\nCOMPLETENESS RULES — NEVER break anything:\n- replace must be 100% complete — no placeholders, no \'// ... existing code ...\', no \'// TODO\'\n- Every import, every function, every handler must be fully written\n- Never guess types, props, or variable names — only use what you can see in the provided files\n- If a function needs to stay unchanged, copy it exactly into replace\n- Never omit closing brackets, braces, or tags\n- If you are unsure about any part, include MORE context in search to confirm what you are replacing\n\nOther rules:\n- One object per change location — multiple objects for multiple files or spots\n- NO text before or after the JSON array\n- NO explanation of what you changed\n\nNow describe the bug:',
-
-  feature_modify: 'You are modifying an existing feature. Respond with ONLY a JSON array. NEVER switch to plain-text format. ALWAYS stay in JSON. Escape backticks as \\u0060, newlines as \\n, backslashes as \\\\\\\\ inside JSON string values.\n\nFORMAT (mandatory):\n```json\n[\n  {\n    "file": "exact/path/from/project/root.ts",\n    "search": "exact existing code to replace",\n    "replace": "new code"\n  }\n]\n```\n\nCRITICAL RULES FOR search STRING:\n- Keep search to 1-4 lines MAXIMUM — it is only an anchor, not the full block\n- Pick the most unique line(s) near the change — function signature, unique className, unique comment\n- search must appear EXACTLY ONCE in the entire file — if not unique, add 1 more surrounding line\n- NEVER put more than 4 lines in search — split into multiple entries instead\n- replace can be ANY length — put the complete new code here, no limits\n\nCOMPLETENESS RULES — NEVER break anything:\n- replace must be 100% complete — no placeholders, no \'// ... existing code ...\', no \'// TODO\'\n- Every import, every function, every handler must be fully written\n- Never guess types, props, or variable names — only use what you can see in the provided files\n- Never omit closing brackets, braces, or tags\n\nOther rules:\n- One entry per change location — multiple entries for multiple files or spots\n- NO prose, NO explanation — ONLY the JSON array\n\nDescribe the feature modification:',
-
-  feature_add: 'You are adding a new feature by modifying existing files. Respond with ONLY a JSON array. NEVER switch to plain-text format. ALWAYS stay in JSON. Escape backticks as \\u0060, newlines as \\n, backslashes as \\\\\\\\ inside JSON string values.\n\nFORMAT (mandatory):\n```json\n[\n  {\n    "file": "exact/path/from/project/root.ts",\n    "search": "existing anchor code to insert near",\n    "replace": "anchor code + new code added"\n  }\n]\n```\n\nCRITICAL RULES FOR search STRING:\n- Keep search to 1-4 lines MAXIMUM — it is only an anchor, not the full block\n- Pick the most unique line near where you want to insert — a unique comment, function name, or import\n- search must appear EXACTLY ONCE in the file\n- NEVER use empty string for search\n- replace can be ANY length — include the anchor line PLUS all the new code to insert\n\nCOMPLETENESS RULES — NEVER break anything:\n- replace must be 100% complete — no placeholders, no \'// ... existing code ...\', no \'// TODO\'\n- Always include the original anchor line in replace so nothing is deleted accidentally\n- Every new function, handler, import must be fully written\n- Never guess types or variable names — only use what you see in the provided files\n- NO explanation — ONLY the JSON array\n\nDescribe the feature to add:',
-
-  refactor: 'You are refactoring code. Respond with ONLY a JSON array of changes. NEVER switch to plain-text format. ALWAYS stay in JSON. Escape backticks as \\u0060, newlines as \\n, backslashes as \\\\\\\\ inside JSON string values.\n\nFORMAT (mandatory):\n```json\n[\n  {\n    "file": "exact/path/from/project/root.ts",\n    "search": "exact code to refactor",\n    "replace": "refactored version"\n  }\n]\n```\n\nCRITICAL RULES FOR search STRING:\n- Keep search to 1-4 lines MAXIMUM — it is only an anchor\n- Pick the most unique line(s) in the block to refactor\n- search must appear EXACTLY ONCE in the file\n- replace can be ANY length — write the complete refactored version\n\nCOMPLETENESS RULES — NEVER break anything:\n- replace must be 100% complete — preserve all existing functionality\n- No placeholders, no \'// ... existing code ...\', no \'// TODO\'\n- Every function signature, every type annotation must be preserved or explicitly changed\n- Never omit closing brackets, braces, or tags\n- NO explanation — ONLY the JSON array\n\nDescribe what to refactor:',
-
-  typescript_fix: 'You are fixing TypeScript errors. Respond with ONLY a JSON array. NEVER switch to plain-text format. ALWAYS stay in JSON. Escape backticks as \\u0060, newlines as \\n, backslashes as \\\\\\\\ inside JSON string values.\n\nFORMAT (mandatory):\n```json\n[\n  {\n    "file": "exact/path/from/project/root.ts",\n    "search": "exact line(s) with the type error",\n    "replace": "corrected line(s) with proper types"\n  }\n]\n```\n\nCRITICAL RULES FOR search STRING:\n- Keep search to 1-4 lines MAXIMUM — it is only an anchor\n- Pick the exact line containing the type error — copy it character for character\n- search must appear EXACTLY ONCE in the file — add 1 surrounding line if not unique\n- replace can be ANY length — write the complete fixed version\n\nCOMPLETENESS RULES — NEVER break anything:\n- Fix the type error without changing runtime behavior\n- replace must be 100% complete — no placeholders\n- If fix requires a new import, add a separate entry targeting the existing import block\n- Never guess types — only use types visible in the provided files\n- NO explanation — ONLY the JSON array\n\nPaste the TypeScript error output:',
-}
+  bug: `You are fixing bugs in a codebase. Respond with ONLY a JSON array — no prose, no explanation, no markdown outside the array.
 
 FORMAT (mandatory):
 \`\`\`json
@@ -1383,17 +1334,18 @@ Other rules:
 - NO text before or after the JSON array
 - NO explanation of what you changed
 
-CRITICAL JSON ESCAPING RULES — ALWAYS USE JSON, NEVER SWITCH TO PLAIN-TEXT:
-- ALL responses must be a single JSON array — no exceptions, no mixed formats
-- Backticks in search/replace values must be escaped as \\` in the JSON string
-- Newlines in search/replace values must be escaped as \\n in the JSON string
-- Backslashes must be escaped as \\\\ in the JSON string
-- Never output a plain-text FILE:/SEARCH:/REPLACE:/--- block — the parser cannot read it
-- The entire response must be parseable by JSON.parse() — test mentally before responding
+IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON — it handles all special characters safely:
+
+FILE: exact/path/from/project/root.ts
+SEARCH:
+exact code to find
+REPLACE:
+new code
+---
 
 Now describe the bug:`,
 
-  feature_modify: `You are modifying an existing feature. Respond with ONLY a JSON array. NEVER switch to plain-text format. ALWAYS stay in JSON. Escape backticks as \u0060, newlines as \n, backslashes as \\\\ inside JSON string values.
+  feature_modify: `You are modifying an existing feature. Respond with ONLY a JSON array.
 
 FORMAT (mandatory):
 \`\`\`json
@@ -1423,17 +1375,18 @@ Other rules:
 - One entry per change location — multiple entries for multiple files or spots
 - NO prose, NO explanation — ONLY the JSON array
 
-CRITICAL JSON ESCAPING RULES — ALWAYS USE JSON, NEVER SWITCH TO PLAIN-TEXT:
-- ALL responses must be a single JSON array — no exceptions, no mixed formats
-- Backticks in search/replace values must be escaped as \\` in the JSON string
-- Newlines in search/replace values must be escaped as \\n in the JSON string
-- Backslashes must be escaped as \\\\ in the JSON string
-- Never output a plain-text FILE:/SEARCH:/REPLACE:/--- block — the parser cannot read it
-- The entire response must be parseable by JSON.parse() — test mentally before responding
+IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
+
+FILE: exact/path/from/project/root.ts
+SEARCH:
+exact code to find
+REPLACE:
+new code
+---
 
 Describe the feature modification:`,
 
-  feature_add: `You are adding a new feature by modifying existing files. Respond with ONLY a JSON array. NEVER switch to plain-text format. ALWAYS stay in JSON. Escape backticks as \u0060, newlines as \n, backslashes as \\\\ inside JSON string values.
+  feature_add: `You are adding a new feature by modifying existing files. Respond with ONLY a JSON array.
 
 FORMAT (mandatory):
 \`\`\`json
@@ -1460,17 +1413,18 @@ COMPLETENESS RULES — NEVER break anything:
 - Never guess types or variable names — only use what you see in the provided files
 - NO explanation — ONLY the JSON array
 
-CRITICAL JSON ESCAPING RULES — ALWAYS USE JSON, NEVER SWITCH TO PLAIN-TEXT:
-- ALL responses must be a single JSON array — no exceptions, no mixed formats
-- Backticks in search/replace values must be escaped as \\` in the JSON string
-- Newlines in search/replace values must be escaped as \\n in the JSON string
-- Backslashes must be escaped as \\\\ in the JSON string
-- Never output a plain-text FILE:/SEARCH:/REPLACE:/--- block — the parser cannot read it
-- The entire response must be parseable by JSON.parse() — test mentally before responding
+IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
+
+FILE: exact/path/from/project/root.ts
+SEARCH:
+exact code to find
+REPLACE:
+new code
+---
 
 Describe the feature to add:`,
 
-  refactor: `You are refactoring code. Respond with ONLY a JSON array of changes. NEVER switch to plain-text format. ALWAYS stay in JSON. Escape backticks as \u0060, newlines as \n, backslashes as \\\\ inside JSON string values.
+  refactor: `You are refactoring code. Respond with ONLY a JSON array of changes.
 
 FORMAT (mandatory):
 \`\`\`json
@@ -1496,17 +1450,18 @@ COMPLETENESS RULES — NEVER break anything:
 - Never omit closing brackets, braces, or tags
 - NO explanation — ONLY the JSON array
 
-CRITICAL JSON ESCAPING RULES — ALWAYS USE JSON, NEVER SWITCH TO PLAIN-TEXT:
-- ALL responses must be a single JSON array — no exceptions, no mixed formats
-- Backticks in search/replace values must be escaped as \\` in the JSON string
-- Newlines in search/replace values must be escaped as \\n in the JSON string
-- Backslashes must be escaped as \\\\ in the JSON string
-- Never output a plain-text FILE:/SEARCH:/REPLACE:/--- block — the parser cannot read it
-- The entire response must be parseable by JSON.parse() — test mentally before responding
+IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
+
+FILE: exact/path/from/project/root.ts
+SEARCH:
+exact code to find
+REPLACE:
+new code
+---
 
 Describe what to refactor:`,
 
-  typescript_fix: `You are fixing TypeScript errors. Respond with ONLY a JSON array. NEVER switch to plain-text format. ALWAYS stay in JSON. Escape backticks as \u0060, newlines as \n, backslashes as \\\\ inside JSON string values.
+  typescript_fix: `You are fixing TypeScript errors. Respond with ONLY a JSON array.
 
 FORMAT (mandatory):
 \`\`\`json
@@ -1532,13 +1487,14 @@ COMPLETENESS RULES — NEVER break anything:
 - Never guess types — only use types visible in the provided files
 - NO explanation — ONLY the JSON array
 
-CRITICAL JSON ESCAPING RULES — ALWAYS USE JSON, NEVER SWITCH TO PLAIN-TEXT:
-- ALL responses must be a single JSON array — no exceptions, no mixed formats
-- Backticks in search/replace values must be escaped as \\` in the JSON string
-- Newlines in search/replace values must be escaped as \\n in the JSON string
-- Backslashes must be escaped as \\\\ in the JSON string
-- Never output a plain-text FILE:/SEARCH:/REPLACE:/--- block — the parser cannot read it
-- The entire response must be parseable by JSON.parse() — test mentally before responding
+IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
+
+FILE: exact/path/from/project/root.ts
+SEARCH:
+exact code to find
+REPLACE:
+new code
+---
 
 Paste the TypeScript error output:`,
 }
@@ -2045,7 +2001,7 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
         </p>
         <textarea
           value={input}
-          onChange={(e) => { setInput(e.target.value); setResults([]); sessionStorage.setItem(`devforge-last-fix-input-${projectId}`, e.target.value) }}
+          onChange={(e) => { setInput(e.target.value); setResults([]) }}
           placeholder={compact ? 'Paste JSON or plain-text format here…' : `Paste Claude's JSON response OR plain-text format:\n\nJSON format:\n[\n  { "file": "src/Button.tsx", "search": "const x = 1", "replace": "const x = 2" }\n]\n\nPlain-text format (works with backticks and regex):\nFILE: src/Button.tsx\nSEARCH:\nconst x = 1\nREPLACE:\nconst x = 2\n---`}
           rows={compact ? 5 : 10}
           spellCheck={false}
