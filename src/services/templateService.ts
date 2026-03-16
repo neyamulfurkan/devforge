@@ -298,7 +298,46 @@ FILE REGISTRY (Section 11 of the Global Context Document):
 GLOBAL CONTEXT DOCUMENT:
 {{GLOBAL_CONTEXT_DOCUMENT}}
 
-Based on the error output and your understanding of the project architecture, identify the minimal set of files that could be causing this error. List each file path on its own line. Explain briefly why each file is relevant. Do not suggest more than 5 files unless absolutely necessary.`,
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL — JSON-ONLY RESPONSE FORMAT (NON-NEGOTIABLE):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You MUST respond with ONLY a valid JSON array. NO other format is accepted.
+
+RESPONSE FORMAT (mandatory):
+\`\`\`json
+[
+  {
+    "file": "exact/path/from/project/root.ts",
+    "search": "exact existing code to find",
+    "replace": "exact replacement code"
+  }
+]
+\`\`\`
+
+RULES:
+1. Response MUST be ONLY a JSON array — NO prose, NO explanation, NO markdown outside the array
+2. NO text before the JSON array (no preamble)
+3. NO text after the JSON array (no explanation)
+4. All special characters (backticks, regex patterns, template literals, quotes) are handled automatically by JSON string escaping — NO alternative format
+5. Each search string must appear EXACTLY ONCE in the file — add surrounding context if needed
+6. Replace strings can be ANY length and must be 100% complete with no placeholders
+7. One object per change location — multiple objects for multiple changes
+
+IMPORTANT: JSON strings handle all special characters safely. You do NOT need a plain-text format. All characters including backticks \`\`, dollar signs \$, regex patterns, and template literals \$\{...\} must be written as JSON string values (with proper escaping inside quotes).
+
+Example with backticks in code:
+\`\`\`json
+[
+  {
+    "file": "src/file.ts",
+    "search": "const x = \`template literal\`",
+    "replace": "const x = \`new template\`"
+  }
+]
+\`\`\`
+
+Do NOT invent alternative formats. JSON is sufficient for ALL cases.`,
 
   error_replace: `You are an expert TypeScript/Next.js developer performing a surgical fix.
 
@@ -314,21 +353,46 @@ CURRENT FILE CONTENTS:
 GLOBAL CONTEXT DOCUMENT:
 {{GLOBAL_CONTEXT_DOCUMENT}}
 
-Wrap your entire response in a single fenced plaintext code block so it renders as a copyable artifact. Inside it use this exact format for every fix:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL — JSON-ONLY RESPONSE FORMAT (NON-NEGOTIABLE):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-FILE: src/path/to/file.ts
-SEARCH:
-[exact lines to find, preserving all whitespace and indentation]
-REPLACE:
-[exact replacement lines, preserving all whitespace and indentation]
----
+You MUST respond with ONLY a valid JSON array. NO other format is accepted.
 
-Rules:
-- Every fix must end with --- on its own line
-- One FILE/SEARCH/REPLACE/--- block per change location
-- SEARCH must be exact text from the file character for character
-- REPLACE must be complete, no placeholders, no ellipsis
-- Wrap everything in a fenced code block — nothing before the opening fence, nothing after the closing fence`,
+RESPONSE FORMAT (mandatory):
+\`\`\`json
+[
+  {
+    "file": "exact/path/from/project/root.ts",
+    "search": "exact existing code to find",
+    "replace": "exact replacement code"
+  }
+]
+\`\`\`
+
+RULES:
+1. Response MUST be ONLY a JSON array — NO prose, NO explanation, NO markdown outside the array
+2. NO text before the JSON array (no preamble)
+3. NO text after the JSON array (no explanation)
+4. All special characters (backticks, regex patterns, template literals, quotes) are handled automatically by JSON string escaping — NO alternative format
+5. Each search string must appear EXACTLY ONCE in the file — add surrounding context if needed
+6. Replace strings can be ANY length and must be 100% complete with no placeholders
+7. One object per change location — multiple objects for multiple changes
+
+IMPORTANT: JSON strings handle all special characters safely. You do NOT need a plain-text format. All characters including backticks \`\`, dollar signs \$, regex patterns, and template literals \$\{...\} must be written as JSON string values (with proper escaping inside quotes).
+
+Example with backticks in code:
+\`\`\`json
+[
+  {
+    "file": "src/file.ts",
+    "search": "const x = \`template literal\`",
+    "replace": "const x = \`new template\`"
+  }
+]
+\`\`\`
+
+Do NOT invent alternative formats. JSON is sufficient for ALL cases.`,
 
   feature_delta: `You are an expert software architect. A developer wants to add a new feature to their existing project.
 
@@ -395,25 +459,45 @@ RELEVANT GLOBAL CONTEXT DOCUMENT SECTIONS:
 {{GCD_SECTIONS}}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-INSTRUCTIONS:
+CRITICAL — JSON-ONLY RESPONSE FORMAT (NON-NEGOTIABLE):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. List every file path that contains TypeScript errors — one per line, no extra text.
-2. For each file, note the TS error codes present (e.g. TS2345, TS7006).
-3. Identify whether each error is in the file itself or caused by a missing/wrong type exported from a dependency.
-4. If a fix in one file will cascade and resolve errors in other files, call that out explicitly.
-5. Do NOT provide fixes yet. Only identify files and the nature of each error.
+You MUST respond with ONLY a valid JSON array. NO other format is accepted.
 
-OUTPUT FORMAT — use this exactly:
-FILES TO REVIEW:
-src/path/to/file.ts — TS2345, TS7006 (type mismatch on line 42, implicit any on line 87)
-src/path/to/other.ts — TS2339 (property does not exist — likely caused by wrong interface in types/index.ts)
+RESPONSE FORMAT (mandatory):
+\`\`\`json
+[
+  {
+    "file": "exact/path/from/project/root.ts",
+    "search": "exact existing code to find",
+    "replace": "exact replacement code"
+  }
+]
+\`\`\`
 
-DEPENDENCY ANALYSIS:
-[Which errors are root causes vs cascading effects]
+RULES:
+1. Response MUST be ONLY a JSON array — NO prose, NO explanation, NO markdown outside the array
+2. NO text before the JSON array (no preamble)
+3. NO text after the JSON array (no explanation)
+4. All special characters (backticks, regex patterns, template literals, quotes) are handled automatically by JSON string escaping — NO alternative format
+5. Each search string must appear EXACTLY ONCE in the file — add surrounding context if needed
+6. Replace strings can be ANY length and must be 100% complete with no placeholders
+7. One object per change location — multiple objects for multiple changes
 
-RECOMMENDED REVIEW ORDER:
-[List files in the order they should be fixed to minimise cascading re-fixes]`,
+IMPORTANT: JSON strings handle all special characters safely. You do NOT need a plain-text format. All characters including backticks \`\`, dollar signs \$, regex patterns, and template literals \$\{...\} must be written as JSON string values (with proper escaping inside quotes).
+
+Example with backticks in code:
+\`\`\`json
+[
+  {
+    "file": "src/file.ts",
+    "search": "const x = \`template literal\`",
+    "replace": "const x = \`new template\`"
+  }
+]
+\`\`\`
+
+Do NOT invent alternative formats. JSON is sufficient for ALL cases.`,
 
   tsc_error_replace: `You are an expert TypeScript/Next.js developer performing surgical fixes for TypeScript compilation errors.
 
@@ -433,33 +517,45 @@ RELEVANT GLOBAL CONTEXT DOCUMENT SECTIONS:
 {{GCD_SECTIONS}}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-INSTRUCTIONS:
+CRITICAL — JSON-ONLY RESPONSE FORMAT (NON-NEGOTIABLE):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Provide exact line-level replacements to fix every TypeScript error. Follow these rules:
+You MUST respond with ONLY a valid JSON array. NO other format is accepted.
 
-1. FIND THIS EXACT LINE must be the literal line from the file including all whitespace and indentation.
-2. REPLACE WITH must be the exact replacement including all whitespace and indentation.
-3. Fix one error per replacement block — do not combine multiple fixes into one block.
-4. If a fix requires adding an import, provide a separate replacement block for the import section.
-5. Never rewrite an entire function or file. Surgical replacements only.
-6. After all replacements, state: "Running npx tsc --noEmit after these changes should produce 0 errors."
+RESPONSE FORMAT (mandatory):
+\`\`\`json
+[
+  {
+    "file": "exact/path/from/project/root.ts",
+    "search": "exact existing code to find",
+    "replace": "exact replacement code"
+  }
+]
+\`\`\`
 
-Wrap your entire response in a single fenced plaintext code block so it renders as a copyable artifact. Inside it use this exact format for every fix:
+RULES:
+1. Response MUST be ONLY a JSON array — NO prose, NO explanation, NO markdown outside the array
+2. NO text before the JSON array (no preamble)
+3. NO text after the JSON array (no explanation)
+4. All special characters (backticks, regex patterns, template literals, quotes) are handled automatically by JSON string escaping — NO alternative format
+5. Each search string must appear EXACTLY ONCE in the file — add surrounding context if needed
+6. Replace strings can be ANY length and must be 100% complete with no placeholders
+7. One object per change location — multiple objects for multiple changes
 
-FILE: src/path/to/file.ts
-SEARCH:
-[exact lines to find, preserving all whitespace and indentation]
-REPLACE:
-[exact replacement lines, preserving all whitespace and indentation]
----
+IMPORTANT: JSON strings handle all special characters safely. You do NOT need a plain-text format. All characters including backticks \`\`, dollar signs \$, regex patterns, and template literals \$\{...\} must be written as JSON string values (with proper escaping inside quotes).
 
-Rules:
-- Every fix must end with --- on its own line
-- One FILE/SEARCH/REPLACE/--- block per change location
-- SEARCH must be exact text from the file character for character
-- REPLACE must be complete, no placeholders, no ellipsis
-- Wrap everything in a fenced code block — nothing before the opening fence, nothing after the closing fence`,
+Example with backticks in code:
+\`\`\`json
+[
+  {
+    "file": "src/file.ts",
+    "search": "const x = \`template literal\`",
+    "replace": "const x = \`new template\`"
+  }
+]
+\`\`\`
+
+Do NOT invent alternative formats. JSON is sufficient for ALL cases.`,
 }
 // ─── Variable substitution (also exported for promptGenerator.ts) ─────────────
 
