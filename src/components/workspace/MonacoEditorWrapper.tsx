@@ -74,6 +74,7 @@ interface MonacoEditorWrapperProps {
   isLocalMode?: boolean
   openLocalPath?: string | null
   onEditorMount?: (editor: { runFindReplace: () => void; runFind: () => void }) => void
+  onCodePasted?: (filePath: string) => void
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -83,6 +84,7 @@ export default function MonacoEditorWrapper({
   isLocalMode: isLocalModeProp,
   openLocalPath: openLocalPathProp,
   onEditorMount,
+  onCodePasted,
 }: MonacoEditorWrapperProps): JSX.Element {
   const { isReadOnly, fileContent } = useEditorStore()
   const isLocalMode = isLocalModeProp ?? false
@@ -181,6 +183,13 @@ export default function MonacoEditorWrapper({
               },
             })
           }
+          // Detect paste events — fire onCodePasted so parent can open JSON modal
+          editor.onDidPaste(() => {
+            if (onCodePasted && !isLocalMode) {
+              const path = file?.filePath ?? ''
+              if (path) onCodePasted(path)
+            }
+          })
         }}
         onChange={(value) => {
           if (value !== undefined) {

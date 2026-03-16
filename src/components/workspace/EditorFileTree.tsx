@@ -32,6 +32,8 @@ import type { LocalFileNode } from '@/store/editorStore'
 // 6. Local types
 interface EditorFileTreeProps {
   projectId: string
+  onFind?: () => void
+  onFindReplace?: () => void
 }
 
 interface FolderNode {
@@ -248,7 +250,7 @@ function buildLocalFileTree(nodes: LocalFileNode[]): TreeNode[] {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function EditorFileTree({ projectId }: EditorFileTreeProps): JSX.Element {
+export function EditorFileTree({ projectId, onFind, onFindReplace }: EditorFileTreeProps): JSX.Element {
   const { files, updateFileStatus } = useFiles(projectId)
   const { openFileId, openFile, isLocalMode, openLocalFile } = useEditor(projectId)
   const { getLocalState } = useEditorStore()
@@ -578,6 +580,34 @@ export function EditorFileTree({ projectId }: EditorFileTreeProps): JSX.Element 
           className="w-full"
         />
       </div>
+
+      {/* Find / Replace buttons — below filter, only when handlers provided */}
+      {(onFind || onFindReplace) && (
+        <div className="flex-shrink-0 flex items-center gap-1 px-2 py-1.5 border-b border-[var(--border-subtle)]">
+          {onFind && (
+            <button
+              type="button"
+              onClick={onFind}
+              title="Find in file (Ctrl+F)"
+              className="flex flex-1 items-center justify-center gap-1.5 h-7 rounded-md text-xs font-medium border border-[var(--border-default)] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] hover:border-[var(--accent-border)] hover:bg-[var(--accent-light)] transition-all duration-150"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              Find
+            </button>
+          )}
+          {onFindReplace && (
+            <button
+              type="button"
+              onClick={onFindReplace}
+              title="Find & Replace (Ctrl+H)"
+              className="flex flex-1 items-center justify-center gap-1.5 h-7 rounded-md text-xs font-medium border border-[var(--border-default)] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] hover:border-[var(--accent-border)] hover:bg-[var(--accent-light)] transition-all duration-150"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M3 12h12M3 18h9"/><path d="m16 16 2 2 4-4"/></svg>
+              Replace
+            </button>
+          )}
+        </div>
+      )}
 
       {/* File count + mode indicator */}
       <div className="flex-shrink-0 px-3 py-1.5 border-b border-[var(--border-subtle)] flex items-center justify-between">

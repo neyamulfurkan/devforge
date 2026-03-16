@@ -28,6 +28,7 @@ import { ExportView } from '@/components/workspace/ExportView'
 import { PromptsView } from '@/components/workspace/PromptsView'
 import { EditorFileTree } from '@/components/workspace/EditorFileTree'
 import { EditorTopBar } from '@/components/workspace/EditorTopBar'
+import { JsonAppendModal } from '@/components/workspace/JsonAppendModal'
 
 // 6. Internal imports — hooks, stores, types
 import { useProject } from '@/hooks/useProject'
@@ -975,6 +976,10 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
   const findReplaceRef = React.useRef<(() => void) | null>(null)
   const findRef = React.useRef<(() => void) | null>(null)
 
+  // JSON modal state — opened automatically after code is pasted
+  const [jsonModalOpen, setJsonModalOpen] = React.useState(false)
+  const [jsonModalFilePath, setJsonModalFilePath] = React.useState('')
+
   const handleEditorMount = useCallback(
     (api: { runFindReplace: () => void; runFind: () => void }) => {
       findReplaceRef.current = api.runFindReplace
@@ -1012,10 +1017,21 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
   }
 
   return (
+    <>
+    <JsonAppendModal
+      open={jsonModalOpen}
+      onClose={() => { setJsonModalOpen(false); setJsonModalFilePath('') }}
+      projectId={projectId}
+      prefilledFilePath={jsonModalFilePath}
+    />
     <div className="flex h-full w-full overflow-hidden">
       {/* Left: File tree */}
       <div className="hidden w-60 shrink-0 border-r border-[var(--border-subtle)] md:flex md:flex-col">
-        <EditorFileTree projectId={projectId} />
+        <EditorFileTree
+          projectId={projectId}
+          onFind={() => findRef.current?.()}
+          onFindReplace={() => findReplaceRef.current?.()}
+        />
       </div>
 
       {/* Center + Top: Editor with pinned top bar */}
@@ -1025,8 +1041,6 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
           file={openFile as Parameters<typeof EditorTopBar>[0]['file']}
           onMarkComplete={handleMarkComplete}
           projectId={projectId}
-          onFind={() => findRef.current?.()}
-          onFindReplace={() => findReplaceRef.current?.()}
         />
 
         {/* Monaco editor fills remaining height */}
@@ -1037,10 +1051,15 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
             isLocalMode={isLocalMode}
             openLocalPath={openLocalPath}
             onEditorMount={handleEditorMount}
+            onCodePasted={(filePath) => {
+              setJsonModalFilePath(filePath)
+              setJsonModalOpen(true)
+            }}
           />
         </div>
       </div>
     </div>
+    </>
   )
 }
 

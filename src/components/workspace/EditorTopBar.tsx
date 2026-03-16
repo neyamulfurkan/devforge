@@ -4,7 +4,7 @@
 import { useState, useCallback } from 'react'
 
 // 2. Third-party imports
-import { Lock, Unlock, CheckSquare, FileCode, Replace, Braces, ChevronDown, ChevronUp, Check, Loader2 } from 'lucide-react'
+import { Lock, Unlock, CheckSquare, Braces, ChevronDown, ChevronUp, Check, Loader2 } from 'lucide-react'
 
 // 3. Internal imports — UI components
 import { Button } from '@/components/ui/button'
@@ -28,11 +28,9 @@ interface EditorTopBarProps {
   file: FileWithContent | null
   onMarkComplete: () => void
   projectId: string
-  onFindReplace?: () => void
-  onFind?: () => void
 }
 
-export function EditorTopBar({ file, onMarkComplete, projectId, onFindReplace, onFind }: EditorTopBarProps): JSX.Element {
+export function EditorTopBar({ file, onMarkComplete, projectId }: EditorTopBarProps): JSX.Element {
   const { isReadOnly, toggleReadOnly, fileContent } = useEditorStore()
   const { isLocalMode, openLocalPath } = getProjectLocalState(projectId)
   const [isMarkingComplete, setIsMarkingComplete] = useState(false)
@@ -133,40 +131,7 @@ export function EditorTopBar({ file, onMarkComplete, projectId, onFindReplace, o
 
       {/* Right: Actions */}
       <div className="flex flex-shrink-0 items-center gap-2">
-        {/* Find — always shown when handler provided */}
-        {onFind && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onFind}
-            className="h-7 gap-1.5 px-2 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-            aria-label="Find in file (Ctrl+F)"
-            title="Find (Ctrl+F)"
-          >
-            <FileCode className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Find</span>
-          </Button>
-        )}
-
-        {/* Find & Replace — always shown when handler provided */}
-        {onFindReplace && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onFindReplace}
-            className="h-7 gap-1.5 px-2 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-            aria-label="Find and replace (Ctrl+H)"
-            title="Find & Replace (Ctrl+H)"
-          >
-            <Replace className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Replace</span>
-          </Button>
-        )}
-
-        {/* Divider — only when find/replace buttons present */}
-        {(onFind || onFindReplace) && (
-          <div className="h-4 w-px bg-[var(--border-subtle)]" aria-hidden="true" />
-        )}
+        
 
         {/* Copy all file content — always shown */}
         <CopyButton
