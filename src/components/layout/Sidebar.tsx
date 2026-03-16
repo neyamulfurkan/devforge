@@ -89,7 +89,10 @@ export function Sidebar({ collapsed = false }: SidebarProps): JSX.Element {
           onClick={toggleSidebarCollapsed}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className="flex items-center justify-center w-6 h-6 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)] transition-colors duration-150 flex-shrink-0 ml-auto"
+          className={cn(
+            'flex items-center justify-center w-6 h-6 rounded-md text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-quaternary)] transition-colors duration-150 flex-shrink-0',
+            collapsed ? 'mx-auto' : 'ml-auto'
+          )}
         >
           <ChevronRight
             className={collapsed ? 'w-3.5 h-3.5 transition-transform duration-200' : 'w-3.5 h-3.5 transition-transform duration-200 rotate-180'}
