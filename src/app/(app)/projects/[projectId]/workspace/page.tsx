@@ -1144,30 +1144,36 @@ interface ApplyFixesResult {
 
 // Prompt templates that enforce Claude to always respond in parseable format
 const FIX_PROMPTS = {
-  bug: `You are fixing bugs in a codebase. For EVERY fix, you MUST respond with ONLY a JSON array — no prose, no explanation, no markdown outside the array.
+  bug: `You are fixing bugs in a codebase. Respond with ONLY a JSON array — no prose, no explanation, no markdown outside the array.
 
 FORMAT (mandatory):
 \`\`\`json
 [
   {
     "file": "exact/path/from/project/root.ts",
-    "search": "exact existing code to find (multi-line ok, must be unique in file)",
+    "search": "exact existing code to find",
     "replace": "exact replacement code"
   }
 ]
 \`\`\`
 
-RULES:
-- search must be the EXACT current text including whitespace/indentation
-- replace is the complete replacement for that exact search string
-- One object per change — multiple objects for multiple files
-- If a file needs multiple changes, add multiple objects with the same file
+CRITICAL RULES FOR search STRING — THIS IS THE MOST IMPORTANT PART:
+- search must be the COMPLETE exact text as it appears in the file right now
+- Include EVERY line in the block — comments, blank lines, indentation, punctuation — nothing skipped
+- If there are blank lines between statements, include them in search
+- If there are comments above or below the code, include them in search
+- The search string must be unique in the file — if it appears more than once, add more surrounding lines until it is unique
+- NEVER truncate or summarize search — copy it character for character from the file
+- replace follows the same rules — include every line of the new block exactly as it should appear
+
+Other rules:
+- One object per change location — multiple objects for multiple files or multiple spots in same file
 - NO text before or after the JSON array
 - NO explanation of what you changed
 
-Now describe the bug and I will provide all fixes in this exact format.`,
+Now describe the bug:`,
 
-  feature_modify: `You are modifying an existing feature. For EVERY change, respond with ONLY a JSON array.
+  feature_modify: `You are modifying an existing feature. Respond with ONLY a JSON array.
 
 FORMAT (mandatory):
 \`\`\`json
@@ -1180,10 +1186,14 @@ FORMAT (mandatory):
 ]
 \`\`\`
 
-RULES:
-- search must exactly match current file content including indentation
-- One entry per change location
-- Multiple entries allowed for multiple files or multiple spots in same file
+CRITICAL RULES FOR search STRING:
+- search must be the COMPLETE exact text as it appears in the file right now
+- Include EVERY line — comments, blank lines, indentation — nothing skipped or summarized
+- Include enough surrounding lines to make search unique in the file
+- NEVER paraphrase or shorten search — copy it character for character
+
+Other rules:
+- One entry per change location — multiple entries for multiple files or spots
 - NO prose, NO explanation — ONLY the JSON array
 
 Describe the feature modification:`,
@@ -1201,9 +1211,11 @@ FORMAT (mandatory):
 ]
 \`\`\`
 
-RULES:
-- To add code, include the surrounding anchor in search and expand it in replace
-- Never use empty string for search — always anchor to real existing code
+CRITICAL RULES FOR search STRING:
+- search must be the COMPLETE exact text of the anchor block as it appears in the file
+- Include EVERY line of the anchor — comments, blank lines, indentation — nothing skipped
+- Include enough lines to make search unique in the file
+- NEVER use empty string for search — always anchor to real existing code
 - NO explanation — ONLY the JSON array
 
 Describe the feature to add:`,
@@ -1221,9 +1233,11 @@ FORMAT (mandatory):
 ]
 \`\`\`
 
-RULES:
+CRITICAL RULES FOR search STRING:
+- search must be the COMPLETE exact text as it appears in the file right now
+- Include EVERY line — comments, blank lines, indentation — nothing skipped
+- Make search unique by including enough surrounding context
 - Preserve all existing functionality — only change structure/naming/patterns
-- search must exactly match current content
 - NO explanation — ONLY the JSON array
 
 Describe what to refactor:`,
@@ -1241,9 +1255,13 @@ FORMAT (mandatory):
 ]
 \`\`\`
 
-RULES:
-- Fix the type error without changing runtime behavior
-- If fixing requires adding an import, add a separate entry for the import line
+CRITICAL RULES FOR search STRING:
+- search must be the COMPLETE exact text as it appears in the file right now
+- Include EVERY line in the block — comments, blank lines, indentation — nothing skipped
+- Include enough surrounding lines to make search unique in the file
+- NEVER truncate — copy character for character from the file
+- Fix type errors without changing runtime behavior
+- If fix requires a new import, add a separate entry for the import block
 - NO explanation — ONLY the JSON array
 
 Paste the TypeScript error output:`,

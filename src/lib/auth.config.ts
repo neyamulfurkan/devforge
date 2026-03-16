@@ -1,6 +1,7 @@
 import type { NextAuthConfig } from 'next-auth'
 
 // Lightweight config for Edge middleware — no Prisma, no bcryptjs
+// Used by middleware.ts to protect routes without importing heavy Node modules
 export const authConfig: NextAuthConfig = {
   pages: {
     signIn: '/login',
