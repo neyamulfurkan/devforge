@@ -16,7 +16,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 
 // 4b. Additional icon imports for EditorLayout
-import { FolderOpen, FolderDown, Loader2, CheckCircle2, ChevronRight, Sparkles, Check, Wand2, Bug, Plus, GitBranch, Copy, CheckCheck, XCircle, AlertCircle, FileEdit, ChevronDown, X, PanelBottomOpen } from 'lucide-react'
+import { FolderOpen, FolderDown, Loader2, CheckCircle2, ChevronRight, Sparkles, Check, Wand2, Bug, Plus, GitBranch, Copy, CheckCheck, XCircle, AlertCircle, FileEdit, ChevronDown, X, PanelBottomOpen, GitCommit } from 'lucide-react'
 
 // 5. Internal imports — workspace components
 import { WorkspaceNav } from '@/components/workspace/WorkspaceNav'
@@ -618,6 +618,48 @@ STRICT RULES:
 // ─── Editor mode switcher bar ─────────────────────────────────────────────────
 // Sits above the editor. Lets user toggle between DB files and local folder.
 
+function GitPushButton({ projectId }: { projectId: string }): JSX.Element {
+  const [commitMsg, setCommitMsg] = React.useState('')
+  const [copyState, setCopyState] = React.useState<'idle' | 'done'>('idle')
+
+  // Auto-populate commit message from last Claude response pasted in ApplyFixes
+  // User can also type manually
+  const handleCopy = React.useCallback(async () => {
+    const msg = commitMsg.trim() || 'update'
+    const cmd = `git add . && git commit -m "${msg.replace(/"/g, "'")}" && git push`
+    await navigator.clipboard.writeText(cmd)
+    setCopyState('done')
+    setTimeout(() => setCopyState('idle'), 2500)
+  }, [commitMsg])
+
+  return (
+    <div className="flex items-center gap-1.5 border-t border-[var(--border-subtle)] px-3 py-2 bg-[var(--bg-primary)]">
+      <GitCommit className="h-3 w-3 text-[var(--text-tertiary)] flex-shrink-0" />
+      <input
+        type="text"
+        value={commitMsg}
+        onChange={(e) => setCommitMsg(e.target.value)}
+        placeholder="commit message…"
+        className="flex-1 min-w-0 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
+        onKeyDown={(e) => { if (e.key === 'Enter') handleCopy() }}
+      />
+      <button
+        type="button"
+        onClick={handleCopy}
+        className={cn(
+          'flex-shrink-0 flex items-center gap-1 h-6 px-2 rounded text-[10px] font-medium transition-all duration-150',
+          copyState === 'done'
+            ? 'bg-[var(--status-complete-bg)] text-[var(--status-complete)]'
+            : 'bg-[var(--bg-quaternary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-default)]'
+        )}
+        title="Copy git add && commit && push command"
+      >
+        {copyState === 'done' ? <><CheckCheck className="h-3 w-3" /> Copied!</> : <><Copy className="h-3 w-3" /> git push</>}
+      </button>
+    </div>
+  )
+}
+
 function EditorModeSwitcher({ projectId }: { projectId: string }): JSX.Element {
   const { isLocalMode, openLocalFolder, switchToDBMode, createProjectFolder } = useEditor(projectId)
   const { getLocalState } = useEditorStore()
@@ -1061,6 +1103,7 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
           <div className="w-full h-full opacity-0 group-hover:opacity-100 bg-[var(--accent-primary)]/50 transition-opacity duration-150" />
         </div>
 
+        <GitPushButton projectId={projectId} />
         {splitMode ? (
           <div className="flex flex-col w-full h-full overflow-hidden" style={{ position: 'absolute', inset: 0 }}>
             <div

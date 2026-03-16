@@ -260,6 +260,23 @@ export function EditorFileTree({ projectId, onFind, onFindReplace }: EditorFileT
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set())
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
 
+  // Auto-expand folders containing the active file
+  const activeFilePath = isLocalMode ? openLocalPath : (files.find(f => f.id === openFileId)?.filePath ?? null)
+
+  useMemo(() => {
+    if (!activeFilePath) return
+    const parts = activeFilePath.split('/')
+    if (parts.length <= 1) return
+    setExpandedFolders((prev) => {
+      const next = new Set(prev)
+      for (let i = 1; i < parts.length; i++) {
+        next.add(parts.slice(0, i).join('/'))
+      }
+      return next
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFilePath])
+
   // ── Tree construction (DB mode vs local mode) ────────────────────────────
 
   // In local mode, build tree from localFileTree. In DB mode, build from files.
