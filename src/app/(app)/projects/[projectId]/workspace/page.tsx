@@ -16,8 +16,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 
 // 4b. Additional icon imports for EditorLayout
-import { FolderOpen, FolderDown, Loader2, CheckCircle2, ChevronRight, Sparkles, Check, Wand2, Bug, Plus, GitBranch, Copy, CheckCheck, XCircle, AlertCircle, FileEdit, ChevronDown } from 'lucide-react'
-// Note: Sparkles and Copy already imported above — used in ApplyFixesView Flow A
+import { FolderOpen, FolderDown, Loader2, CheckCircle2, ChevronRight, Sparkles, Check, Wand2, Bug, Plus, GitBranch, Copy, CheckCheck, XCircle, AlertCircle, FileEdit, ChevronDown, X, PanelBottomOpen } from 'lucide-react'
 
 // 5. Internal imports — workspace components
 import { WorkspaceNav } from '@/components/workspace/WorkspaceNav'
@@ -983,6 +982,8 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
 
   // Apply Fixes panel state
   const [applyFixesOpen, setApplyFixesOpen] = React.useState(false)
+  const [splitMode, setSplitMode] = React.useState(false)
+  const [applyFixesHeight, setApplyFixesHeight] = React.useState(300)
 
   // Sidebar width — resizable via drag handle
   const [sidebarWidth, setSidebarWidth] = React.useState(240)
@@ -1032,19 +1033,19 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
       prefilledFilePath={jsonModalFilePath}
     />
     <div className="flex h-full w-full overflow-hidden">
-      {/* Left: File tree + Apply Fixes panel — resizable */}
+{/* Left: File tree + Apply Fixes panel — resizable + split mode */}
       <div
         style={{ width: sidebarWidth }}
-        className="hidden shrink-0 border-r border-[var(--border-subtle)] md:flex md:flex-col relative"
+        className="hidden shrink-0 border-r border-[var(--border-subtle)] md:flex md:flex-col relative bg-[var(--bg-secondary)]"
       >
-        {/* Right-edge resize handle */}
+        {/* Right-edge width resize handle */}
         <div
           onPointerDown={(e) => {
             e.preventDefault()
             const startX = e.clientX
             const startW = sidebarWidth
             const onMove = (ev: PointerEvent) => {
-              const newW = Math.max(180, Math.min(480, startW + ev.clientX - startX))
+              const newW = Math.max(180, Math.min(600, startW + ev.clientX - startX))
               setSidebarWidth(newW)
             }
             const onUp = () => {
@@ -1054,51 +1055,139 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
             window.addEventListener('pointermove', onMove)
             window.addEventListener('pointerup', onUp)
           }}
-          className="absolute top-0 right-0 w-1 h-full cursor-ew-resize z-10 hover:bg-[var(--accent-primary)]/40 transition-colors duration-150"
-          title="Drag to resize"
-        />
-        {/* File tree — takes remaining space */}
-        <div className={cn('flex flex-col overflow-hidden', applyFixesOpen ? 'flex-1 min-h-0' : 'flex-1')}>
-          <EditorFileTree
-            projectId={projectId}
-            onFind={() => findRef.current?.()}
-            onFindReplace={() => findReplaceRef.current?.()}
-          />
+          className="absolute top-0 right-0 w-1.5 h-full cursor-ew-resize z-20 group"
+          title="Drag to resize width"
+        >
+          <div className="w-full h-full opacity-0 group-hover:opacity-100 bg-[var(--accent-primary)]/50 transition-opacity duration-150" />
         </div>
 
-        {/* Apply Fixes collapsible panel — pinned to bottom of file tree */}
-        <div className="flex-shrink-0 border-t border-[var(--border-subtle)]">
-          {/* Toggle header */}
-          <button
-            type="button"
-            onClick={() => setApplyFixesOpen((v) => !v)}
-            className={cn(
-              'w-full flex items-center justify-between px-3 py-2 text-xs font-medium transition-colors duration-150',
-              applyFixesOpen
-                ? 'bg-[var(--accent-light)] text-[var(--accent-primary)]'
-                : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]'
-            )}
-          >
-            <div className="flex items-center gap-1.5">
-              <FileEdit className="h-3 w-3" />
-              <span>Auto Apply Fixes</span>
+        {splitMode ? (
+          <div className="flex flex-col h-full overflow-hidden">
+            <div
+              className="flex flex-col overflow-hidden"
+              style={{ height: `calc(100% - ${applyFixesHeight}px - 6px)`, minHeight: 80 }}
+            >
+              <EditorFileTree
+                projectId={projectId}
+                onFind={() => findRef.current?.()}
+                onFindReplace={() => findReplaceRef.current?.()}
+              />
             </div>
-            {applyFixesOpen
-              ? <ChevronDown className="h-3 w-3" />
-              : <ChevronRight className="h-3 w-3 rotate-90" />
-            }
-          </button>
-
-          {/* Panel body */}
-          {applyFixesOpen && (
-            <div className="flex flex-col max-h-[480px] overflow-y-auto bg-[var(--bg-primary)]">
-              <ApplyFixesView projectId={projectId} compact />
+            <div
+              onPointerDown={(e) => {
+                e.preventDefault()
+                const startY = e.clientY
+                const startH = applyFixesHeight
+                const onMove = (ev: PointerEvent) => {
+                  const newH = Math.max(120, Math.min(700, startH - (ev.clientY - startY)))
+                  setApplyFixesHeight(newH)
+                }
+                const onUp = () => {
+                  window.removeEventListener('pointermove', onMove)
+                  window.removeEventListener('pointerup', onUp)
+                }
+                window.addEventListener('pointermove', onMove)
+                window.addEventListener('pointerup', onUp)
+              }}
+              className="flex-shrink-0 h-1.5 cursor-ns-resize bg-[var(--border-subtle)] hover:bg-[var(--accent-primary)]/40 transition-colors duration-150 flex items-center justify-center group"
+            >
+              <div className="w-10 h-0.5 rounded-full bg-[var(--border-emphasis)] group-hover:bg-[var(--accent-primary)] transition-colors duration-150" />
             </div>
-          )}
-        </div>
+            <div
+              className="flex flex-col overflow-hidden border-t border-[var(--border-subtle)] bg-[var(--bg-primary)]"
+              style={{ height: applyFixesHeight }}
+            >
+              <div className="flex-shrink-0 flex items-center justify-between px-3 py-1.5 bg-[var(--bg-secondary)] border-b border-[var(--border-subtle)]">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent-primary)]" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--accent-primary)]">Auto Apply Fixes</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSplitMode(false)}
+                  title="Exit split mode"
+                  className="flex items-center justify-center w-5 h-5 rounded-md text-[var(--text-tertiary)] hover:text-[var(--status-error)] hover:bg-[var(--status-error-bg)] transition-all duration-150"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                <ApplyFixesView projectId={projectId} compact />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className={cn('flex flex-col overflow-hidden', applyFixesOpen ? 'flex-1 min-h-0' : 'flex-1')}>
+              <EditorFileTree
+                projectId={projectId}
+                onFind={() => findRef.current?.()}
+                onFindReplace={() => findReplaceRef.current?.()}
+              />
+            </div>
+            <div className="flex-shrink-0 border-t border-[var(--border-subtle)]">
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  onClick={() => setApplyFixesOpen((v) => !v)}
+                  className={cn(
+                    'flex-1 flex items-center gap-2 px-3 py-2 text-xs font-medium transition-all duration-150',
+                    applyFixesOpen
+                      ? 'bg-[var(--accent-light)] text-[var(--accent-primary)]'
+                      : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]'
+                  )}
+                >
+                  <FileEdit className="h-3 w-3 flex-shrink-0" />
+                  <span className="flex-1 text-left">Auto Apply Fixes</span>
+                  {applyFixesOpen
+                    ? <ChevronDown className="h-3 w-3 flex-shrink-0" />
+                    : <ChevronRight className="h-3 w-3 flex-shrink-0 rotate-90" />
+                  }
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSplitMode(true); setApplyFixesOpen(false) }}
+                  title="Split mode — file tree and fixes visible at once"
+                  className="flex-shrink-0 flex items-center justify-center w-8 h-8 border-l border-[var(--border-subtle)] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] hover:bg-[var(--accent-light)] transition-all duration-150"
+                >
+                  <PanelBottomOpen className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {applyFixesOpen && (
+                <div
+                  className="flex flex-col bg-[var(--bg-primary)] border-t border-[var(--border-subtle)]"
+                  style={{ height: applyFixesHeight }}
+                >
+                  <div
+                    onPointerDown={(e) => {
+                      e.preventDefault()
+                      const startY = e.clientY
+                      const startH = applyFixesHeight
+                      const onMove = (ev: PointerEvent) => {
+                        const newH = Math.max(120, Math.min(700, startH - (ev.clientY - startY)))
+                        setApplyFixesHeight(newH)
+                      }
+                      const onUp = () => {
+                        window.removeEventListener('pointermove', onMove)
+                        window.removeEventListener('pointerup', onUp)
+                      }
+                      window.addEventListener('pointermove', onMove)
+                      window.addEventListener('pointerup', onUp)
+                    }}
+                    className="flex-shrink-0 h-2.5 cursor-ns-resize flex items-center justify-center group hover:bg-[var(--accent-primary)]/8 transition-colors duration-150"
+                    title="Drag to resize height"
+                  >
+                    <div className="w-10 h-0.5 rounded-full bg-[var(--border-emphasis)] group-hover:bg-[var(--accent-primary)] transition-colors duration-150" />
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    <ApplyFixesView projectId={projectId} compact />
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
-
-      {/* Center + Top: Editor with pinned top bar */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Pinned top bar */}
         <EditorTopBar
