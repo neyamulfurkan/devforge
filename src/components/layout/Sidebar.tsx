@@ -75,7 +75,10 @@ export function Sidebar({ collapsed = false }: SidebarProps): JSX.Element {
   return (
     <div className="flex flex-col h-full w-full bg-[var(--bg-secondary)] border-r border-[var(--border-subtle)]">
       {/* ─── Logo ─────────────────────────────────────────────────────── */}
-      <div className="flex items-center h-[52px] border-b border-[var(--border-subtle)] flex-shrink-0 px-3 gap-2.5">
+      <div className={cn(
+        'flex items-center h-[52px] border-b border-[var(--border-subtle)] flex-shrink-0 gap-2.5',
+        collapsed ? 'justify-center px-1' : 'px-3'
+      )}>
         <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-[var(--accent-primary)] flex-shrink-0">
           <Zap className="w-4 h-4 text-white" />
         </div>
@@ -90,12 +93,13 @@ export function Sidebar({ collapsed = false }: SidebarProps): JSX.Element {
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className={cn(
-            'flex items-center justify-center w-6 h-6 rounded-md text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-quaternary)] transition-colors duration-150 flex-shrink-0',
+            'flex items-center justify-center w-7 h-7 rounded-md transition-colors duration-150 flex-shrink-0',
+            'text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-quaternary)]',
             collapsed ? 'mx-auto' : 'ml-auto'
           )}
         >
           <ChevronRight
-            className={collapsed ? 'w-3.5 h-3.5 transition-transform duration-200' : 'w-3.5 h-3.5 transition-transform duration-200 rotate-180'}
+            className={collapsed ? 'w-4 h-4 transition-transform duration-200' : 'w-4 h-4 transition-transform duration-200 rotate-180'}
           />
         </button>
       </div>
