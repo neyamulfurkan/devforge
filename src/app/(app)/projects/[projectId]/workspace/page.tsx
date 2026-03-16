@@ -983,6 +983,9 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
   // Apply Fixes panel state
   const [applyFixesOpen, setApplyFixesOpen] = React.useState(false)
 
+  // Sidebar width — resizable via drag handle
+  const [sidebarWidth, setSidebarWidth] = React.useState(240)
+
   const handleEditorMount = useCallback(
     (api: { runFindReplace: () => void; runFind: () => void }) => {
       findReplaceRef.current = api.runFindReplace
@@ -1028,8 +1031,31 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
       prefilledFilePath={jsonModalFilePath}
     />
     <div className="flex h-full w-full overflow-hidden">
-      {/* Left: File tree + Apply Fixes panel */}
-      <div className="hidden w-60 shrink-0 border-r border-[var(--border-subtle)] md:flex md:flex-col">
+      {/* Left: File tree + Apply Fixes panel — resizable */}
+      <div
+        style={{ width: sidebarWidth }}
+        className="hidden shrink-0 border-r border-[var(--border-subtle)] md:flex md:flex-col relative"
+      >
+        {/* Right-edge resize handle */}
+        <div
+          onPointerDown={(e) => {
+            e.preventDefault()
+            const startX = e.clientX
+            const startW = sidebarWidth
+            const onMove = (ev: PointerEvent) => {
+              const newW = Math.max(180, Math.min(480, startW + ev.clientX - startX))
+              setSidebarWidth(newW)
+            }
+            const onUp = () => {
+              window.removeEventListener('pointermove', onMove)
+              window.removeEventListener('pointerup', onUp)
+            }
+            window.addEventListener('pointermove', onMove)
+            window.addEventListener('pointerup', onUp)
+          }}
+          className="absolute top-0 right-0 w-1 h-full cursor-ew-resize z-10 hover:bg-[var(--accent-primary)]/40 transition-colors duration-150"
+          title="Drag to resize"
+        />
         {/* File tree — takes remaining space */}
         <div className={cn('flex flex-col overflow-hidden', applyFixesOpen ? 'flex-1 min-h-0' : 'flex-1')}>
           <EditorFileTree
@@ -1377,18 +1403,18 @@ function ApplyFixesView({ projectId, compact = false }: { projectId: string; com
       )}
 
       {/* Prompt buttons */}
-      <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-4 space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
-          Step 1 — Copy a prompt and send it to Claude with your question
+      <div className={cn('rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] space-y-2', compact ? 'p-2' : 'p-4 space-y-3')}>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+          {compact ? 'Step 1 — Copy prompt' : 'Step 1 — Copy a prompt and send it to Claude with your question'}
         </p>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+        <div className={cn('gap-1.5', compact ? 'flex flex-col' : 'grid grid-cols-2 md:grid-cols-3 gap-2')}>
           {(Object.keys(FIX_PROMPTS) as Array<keyof typeof FIX_PROMPTS>).map((key) => {
-            const labels: Record<keyof typeof FIX_PROMPTS, { label: string; icon: JSX.Element; color: string }> = {
-              bug: { label: 'Bug Fix', icon: <Bug className="h-3.5 w-3.5" />, color: 'var(--status-error)' },
-              feature_modify: { label: 'Modify Feature', icon: <GitBranch className="h-3.5 w-3.5" />, color: 'var(--accent-primary)' },
-              feature_add: { label: 'Add Feature', icon: <Plus className="h-3.5 w-3.5" />, color: 'var(--status-complete)' },
-              refactor: { label: 'Refactor', icon: <Wand2 className="h-3.5 w-3.5" />, color: 'var(--status-in-progress)' },
-              typescript_fix: { label: 'TypeScript Fix', icon: <AlertCircle className="h-3.5 w-3.5" />, color: '#60a5fa' },
+            const labels: Record<keyof typeof FIX_PROMPTS, { label: string; shortLabel: string; icon: JSX.Element; color: string }> = {
+              bug: { label: 'Bug Fix', shortLabel: 'Bug Fix', icon: <Bug className="h-3 w-3" />, color: 'var(--status-error)' },
+              feature_modify: { label: 'Modify Feature', shortLabel: 'Modify', icon: <GitBranch className="h-3 w-3" />, color: 'var(--accent-primary)' },
+              feature_add: { label: 'Add Feature', shortLabel: 'Add Feature', icon: <Plus className="h-3 w-3" />, color: 'var(--status-complete)' },
+              refactor: { label: 'Refactor', shortLabel: 'Refactor', icon: <Wand2 className="h-3 w-3" />, color: 'var(--status-in-progress)' },
+              typescript_fix: { label: 'TypeScript Fix', shortLabel: 'TS Fix', icon: <AlertCircle className="h-3 w-3" />, color: '#60a5fa' },
             }
             const meta = labels[key]
             const isCopied = copiedPrompt === key
@@ -1406,8 +1432,11 @@ function ApplyFixesView({ projectId, compact = false }: { projectId: string; com
                     : 'border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-emphasis)] hover:bg-[var(--bg-quaternary)]'
                 )}
               >
-                <span style={{ color: meta.color }}>{meta.icon}</span>
-                {isCopied ? <><CheckCheck className="h-3 w-3" /> Copied!</> : meta.label}
+                <span style={{ color: meta.color }} className="flex-shrink-0">{meta.icon}</span>
+                <span className="truncate">
+                  {isCopied ? 'Copied!' : compact ? meta.shortLabel : meta.label}
+                </span>
+                {isCopied && <CheckCheck className="h-3 w-3 flex-shrink-0" />}
               </button>
             )
           })}
@@ -1423,15 +1452,15 @@ function ApplyFixesView({ projectId, compact = false }: { projectId: string; com
       </div>
 
       {/* Paste area */}
-      <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-4 space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
-          Step 2 — Paste Claude's response here
+      <div className={cn('rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] space-y-2', compact ? 'p-2' : 'p-4 space-y-3')}>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+          {compact ? 'Step 2 — Paste response' : 'Step 2 — Paste Claude\'s response here'}
         </p>
         <textarea
           value={input}
           onChange={(e) => { setInput(e.target.value); setResults([]) }}
-          placeholder={`Paste Claude's JSON response here, e.g.:\n[\n  {\n    "file": "src/components/Button.tsx",\n    "search": "const x = 1",\n    "replace": "const x = 2"\n  }\n]`}
-          rows={10}
+          placeholder={compact ? 'Paste JSON here…' : `Paste Claude's JSON response here, e.g.:\n[\n  {\n    "file": "src/components/Button.tsx",\n    "search": "const x = 1",\n    "replace": "const x = 2"\n  }\n]`}
+          rows={compact ? 5 : 10}
           spellCheck={false}
           className={cn(
             'w-full resize-y rounded-md border px-3 py-2.5 font-mono text-xs',
@@ -1462,11 +1491,11 @@ function ApplyFixesView({ projectId, compact = false }: { projectId: string; com
 
       {/* Preview of parsed fixes */}
       {parsed && parsed.length > 0 && (
-        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-4 space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
-            Step 3 — Review and Apply
+        <div className={cn('rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] space-y-2', compact ? 'p-2' : 'p-4 space-y-3')}>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+            {compact ? 'Step 3 — Apply' : 'Step 3 — Review and Apply'}
           </p>
-          <div className="space-y-2 max-h-48 overflow-y-auto">
+          <div className={cn('space-y-1.5 overflow-y-auto', compact ? 'max-h-28' : 'max-h-48')}>
             {parsed.map((entry, i) => (
               <div key={i} className="flex items-start gap-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] px-3 py-2">
                 <span className="text-[10px] font-mono text-[var(--text-tertiary)] flex-shrink-0 mt-0.5">#{i + 1}</span>
@@ -1500,9 +1529,9 @@ function ApplyFixesView({ projectId, compact = false }: { projectId: string; com
 
       {/* Results */}
       {results.length > 0 && (
-        <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] p-4 space-y-3">
+        <div className={cn('rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] space-y-2', compact ? 'p-2' : 'p-4 space-y-3')}>
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Results</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">Results</p>
             <div className="flex items-center gap-3">
               {appliedCount > 0 && (
                 <span className="text-xs font-medium text-[var(--status-complete)]">
