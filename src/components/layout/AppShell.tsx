@@ -1,7 +1,7 @@
 'use client'
 
 // 1. React imports
-import { useEffect } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 
 // 2. Third-party library imports
 import { AnimatePresence, motion } from 'framer-motion'
@@ -20,7 +20,36 @@ interface AppShellProps {
 }
 
 export default function AppShell({ children }: AppShellProps): JSX.Element {
-  const { sidebarOpen, setSidebarOpen } = useUIStore()
+  const { sidebarOpen, setSidebarOpen, sidebarCollapsed, sidebarWidth, setSidebarWidth } = useUIStore()
+  const isResizing = useRef(false)
+  const startX = useRef(0)
+  const startWidth = useRef(0)
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    isResizing.current = true
+    startX.current = e.clientX
+    startWidth.current = sidebarWidth
+    document.body.style.cursor = 'ew-resize'
+    document.body.style.userSelect = 'none'
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!isResizing.current) return
+      const delta = ev.clientX - startX.current
+      const newWidth = Math.max(180, Math.min(480, startWidth.current + delta))
+      setSidebarWidth(newWidth)
+    }
+
+    const handleMouseUp = () => {
+      isResizing.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+  }, [sidebarWidth, setSidebarWidth])
 
   // Close sidebar on mobile when navigating
   useEffect(() => {
@@ -46,13 +75,23 @@ export default function AppShell({ children }: AppShellProps): JSX.Element {
           <motion.aside
             key="sidebar"
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 240, opacity: 1 }}
+            animate={{ width: sidebarCollapsed ? 56 : sidebarWidth, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.2, ease: 'easeInOut' }}
-            className="hidden md:flex flex-col flex-shrink-0 overflow-hidden"
-            style={{ width: sidebarOpen ? 240 : 0 }}
+            className="hidden md:flex flex-col flex-shrink-0 overflow-hidden relative"
+            style={{ width: sidebarCollapsed ? 56 : sidebarWidth }}
           >
-            <Sidebar />
+            <Sidebar collapsed={sidebarCollapsed} />
+            {/* Resize handle — only when not collapsed */}
+            {!sidebarCollapsed && (
+              <div
+                onMouseDown={handleResizeStart}
+                className="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize z-10 group"
+                title="Drag to resize sidebar"
+              >
+                <div className="w-full h-full opacity-0 group-hover:opacity-100 bg-[var(--accent-primary)] transition-opacity duration-150" />
+              </div>
+            )}
           </motion.aside>
         )}
       </AnimatePresence>
