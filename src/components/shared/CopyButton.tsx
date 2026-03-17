@@ -26,6 +26,7 @@ interface CopyButtonProps {
   className?: string
   label?: string
   successMessage?: string
+  'aria-label'?: string
 }
 
 // Size variant config
@@ -50,6 +51,7 @@ export function CopyButton({
   className,
   label,
   successMessage,
+  'aria-label': ariaLabel,
 }: CopyButtonProps): JSX.Element {
   const [copied, setCopied] = useState(false)
 
@@ -74,7 +76,7 @@ export function CopyButton({
           <button
             type="button"
             onClick={handleCopy}
-            aria-label={copied ? 'Copied!' : 'Copy to clipboard'}
+            aria-label={copied ? (successMessage ?? 'Copied!') : (ariaLabel ?? 'Copy to clipboard')}
             className={cn(
               // Base styles
               'relative inline-flex items-center justify-center rounded-md',
@@ -121,7 +123,7 @@ export function CopyButton({
         </TooltipTrigger>
 
         <TooltipContent side="top" className="text-xs">
-          {copied ? (successMessage ?? 'Copied!') : 'Copy to clipboard'}
+          {copied ? (successMessage ?? 'Copied!') : (label ? `Copy ${label.replace(/^Copy — /, '')}` : (ariaLabel ?? 'Copy to clipboard'))}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

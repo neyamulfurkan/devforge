@@ -32,37 +32,60 @@ interface OpenPromptButtonProps {
 
 function OpenPromptButton({ file, projectId }: OpenPromptButtonProps): JSX.Element {
   const [open, setOpen] = useState(false)
+  const [promptCopied, setPromptCopied] = useState(false)
+
+  const handleOpenAndCopy = useCallback(async () => {
+    setOpen(true)
+    if (file.filePrompt) {
+      const { copyToClipboard } = await import('@/lib/utils')
+      const success = await copyToClipboard(file.filePrompt)
+      if (success) {
+        setPromptCopied(true)
+        setTimeout(() => setPromptCopied(false), 2000)
+      }
+    }
+  }, [file.filePrompt])
+
+  const shortName = file.filePath.split('/').pop() ?? file.filePath
+
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        title="View file-specific prompt"
+        onClick={handleOpenAndCopy}
+        title={`Open prompt panel and copy FSP for ${shortName}`}
         className={cn(
           'inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-xs font-medium border transition-all duration-150',
-          'border-[var(--border-default)] text-[var(--text-tertiary)]',
-          'hover:text-[var(--accent-primary)] hover:border-[var(--accent-border)] hover:bg-[var(--accent-light)]'
+          promptCopied
+            ? 'border-[var(--status-complete)]/40 bg-[var(--status-complete-bg)] text-[var(--status-complete)]'
+            : 'border-[var(--border-default)] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] hover:border-[var(--accent-border)] hover:bg-[var(--accent-light)]'
         )}
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-          <line x1="16" y1="13" x2="8" y2="13" />
-          <line x1="16" y1="17" x2="8" y2="17" />
-          <polyline points="10 9 9 9 8 9" />
-        </svg>
-        <span className="hidden sm:inline">Prompt</span>
+        {promptCopied ? (
+          <Check className="w-3 h-3" />
+        ) : (
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+            <polyline points="10 9 9 9 8 9" />
+          </svg>
+        )}
+        <span className="hidden sm:inline">
+          {promptCopied ? `FSP copied — ${shortName}` : 'Open + Copy Prompt'}
+        </span>
       </button>
       <FilePromptPanel
         file={open ? file : null}
@@ -191,7 +214,8 @@ export function EditorTopBar({ file, onMarkComplete, projectId }: EditorTopBarPr
         <CopyButton
           value={fileContent}
           size="sm"
-          label="Copy All"
+          label={file ? `Copy — ${file.filePath.split('/').pop() ?? file.filePath}` : 'Copy All'}
+          successMessage={file ? `Copied ${file.filePath.split('/').pop() ?? file.filePath}!` : 'Copied!'}
           aria-label="Copy file content"
         />
 
