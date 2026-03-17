@@ -404,6 +404,20 @@ export const ERROR_TYPE_LABELS: Record<string, string> = {
   OTHER: 'Other',
 }
 
+// DevProbe bridge ingest endpoint path (used by useDevProbeBridge hook)
+export const DEVPROBE_INGEST_PATH = '/api/devprobe/ingest' as const
+export const DEVPROBE_PING_PATH = '/api/devprobe/ping' as const
+
+// DevForge bridge channel and event constants
+export const DEVFORGE_CHANNEL_PREFIX = 'devprobe-devforge-' as const
+export const DEVFORGE_CONNECT_REQUEST = 'DEVPROBE_CONNECT_REQUEST' as const
+export const DEVFORGE_SEND_ERROR = 'APP_SEND_TO_DEVFORGE' as const
+export const DEVFORGE_SEND_ERROR_GROUP = 'APP_SEND_TO_DEVFORGE_GROUP' as const
+export const DEVFORGE_SEND_SUMMARY = 'APP_SEND_TO_DEVFORGE_SUMMARY' as const
+export const DEVFORGE_CONNECTION_TIMEOUT_MS = 5000 as const
+export const DEVFORGE_PING_INTERVAL_MS = 5 * 60 * 1000 as const
+export const DEVFORGE_STALE_THRESHOLD_MS = 5 * 60 * 1000 as const
+
 // Workspace tab definitions
 export const WORKSPACE_TABS = [
   { value: 'overview', label: 'Overview' },

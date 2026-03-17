@@ -1,7 +1,14 @@
 // src/hooks/useErrors.ts
+// NOTE: This project also requires two new API route files:
+//
+// FILE: src/app/api/devprobe/ingest/route.ts
+// (create this file with the content below)
+//
+// FILE: src/app/api/devprobe/ping/route.ts
+// (create this file with the content below)
 
 // 1. React imports
-import { useMemo } from 'react'
+import { useMemo, useEffect, useRef, useState } from 'react'
 
 // 2. Third-party library imports
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -186,4 +193,154 @@ export function useErrors(projectId: string): UseErrorsReturn {
       updateIdentifiedFilesMutation.mutateAsync({ errorId, files }),
     parseTscOutput,
   }
+}
+
+// ─── DevProbe bridge hook ─────────────────────────────────────────────────────
+// Subscribes to the DevProbe→DevForge Pusher bridge channel and auto-creates
+// error sessions whenever DevProbe sends APP_SEND_TO_DEVFORGE events.
+// Uses the SAME error session system as manual errors — zero new UI needed.
+
+interface DevProbeErrorPayload {
+  type: 'error' | 'warning' | 'info'
+  message: string
+  filePath: string
+  lineNumber?: number
+  columnNumber?: number
+  engine: string
+  severity: string
+  stackTrace?: string
+  errorCode?: string
+  source: 'devprobe'
+  timestamp: string
+}
+
+interface UseDevProbeBridgeReturn {
+  isDevProbeConnected: boolean
+  pendingFromDevProbe: number
+}
+
+export function useDevProbeBridge(userId: string | undefined): UseDevProbeBridgeReturn {
+  const [isDevProbeConnected, setIsDevProbeConnected] = useState(false)
+  const [pendingFromDevProbe, setPendingFromDevProbe] = useState(0)
+  const channelRef = useRef<any | null>(null)
+  const pusherRef = useRef<any | null>(null)
+
+  useEffect(() => {
+    if (!userId || typeof window === 'undefined') return
+
+    const pusherKey = process.env.NEXT_PUBLIC_PUSHER_KEY
+    const pusherCluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER
+    if (!pusherKey || !pusherCluster) return
+
+    // Initialize Pusher (client-only)
+    const initPusher = async () => {
+      try {
+        const PusherModule = await import('pusher-js')
+        const Pusher = PusherModule.default
+        const pusher = new Pusher(pusherKey, { cluster: pusherCluster, forceTLS: true })
+        pusherRef.current = pusher
+
+      const channelName = `devprobe-devforge-${userId}`
+      const channel = pusher.subscribe(channelName)
+      channelRef.current = channel
+
+      channel.bind('pusher:subscription_succeeded', () => {
+        setIsDevProbeConnected(true)
+      })
+
+      channel.bind('pusher:subscription_error', () => {
+        setIsDevProbeConnected(false)
+      })
+
+      // Listen for single error events from DevProbe
+      channel.bind('APP_SEND_TO_DEVFORGE', (payload: DevProbeErrorPayload) => {
+        if (!payload || payload.source !== 'devprobe') return
+        setIsDevProbeConnected(true)
+
+        const errorType = payload.engine === 'TYPESCRIPT' || payload.engine === 'BUILD'
+          ? 'TYPESCRIPT'
+          : payload.engine === 'RUNTIME' || payload.engine === 'CONSOLE'
+          ? 'RUNTIME'
+          : 'OTHER'
+
+        const errorOutput = [
+          `[DevProbe — ${payload.engine}] ${payload.severity}`,
+          payload.errorCode ? `Code: ${payload.errorCode}` : null,
+          `Message: ${payload.message}`,
+          payload.filePath ? `File: ${payload.filePath}${payload.lineNumber ? `:${payload.lineNumber}` : ''}` : null,
+          payload.stackTrace ? `\nStack:\n${payload.stackTrace}` : null,
+        ].filter(Boolean).join('\n')
+
+        // Auto-create error session via the existing API — no projectId needed
+        // at this layer; the bridge fires globally and the active project picks it up
+        fetch('/api/devprobe/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ errorType, errorOutput, source: 'devprobe', engine: payload.engine }),
+        })
+          .then(() => setPendingFromDevProbe((n) => n + 1))
+          .catch(() => { /* fire-and-forget */ })
+      })
+
+      // Listen for error group events
+      channel.bind('APP_SEND_TO_DEVFORGE_GROUP', (payload: {
+        type: string
+        rootCauseTitle: string
+        rootCauseExplanation: string
+        affectedErrors: DevProbeErrorPayload[]
+        source: 'devprobe'
+      }) => {
+        if (!payload || payload.source !== 'devprobe') return
+        setIsDevProbeConnected(true)
+
+        const errorOutput = [
+          `[DevProbe — Root Cause Group] ${payload.rootCauseTitle}`,
+          `Explanation: ${payload.rootCauseExplanation}`,
+          `Affected errors (${payload.affectedErrors.length}):`,
+          ...payload.affectedErrors.map((e) =>
+            `  • [${e.engine}] ${e.message}${e.filePath ? ` — ${e.filePath}` : ''}`
+          ),
+        ].join('\n')
+
+        fetch('/api/devprobe/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ errorType: 'OTHER', errorOutput, source: 'devprobe', engine: 'GROUP' }),
+        })
+          .then(() => setPendingFromDevProbe((n) => n + 1))
+          .catch(() => { /* fire-and-forget */ })
+      })
+
+        // Ping back to DevProbe so it detects DevForge as connected
+        const pingInterval = setInterval(() => {
+          fetch('/api/devprobe/ping', { method: 'POST' }).catch(() => { /* ignore */ })
+        }, 30_000)
+
+        return () => {
+          clearInterval(pingInterval)
+          if (channelRef.current) {
+            channelRef.current.unbind_all()
+          }
+          if (pusherRef.current) {
+            pusherRef.current.unsubscribe(channelName)
+            pusherRef.current.disconnect()
+          }
+        }
+      } catch (error) {
+        console.error('Failed to initialize Pusher:', error)
+        setIsDevProbeConnected(false)
+        return () => {
+          if (channelRef.current) channelRef.current.unbind_all()
+          if (pusherRef.current) pusherRef.current.disconnect()
+        }
+      }
+    }
+
+    const cleanup = initPusher()
+    return () => {
+      cleanup.then((fn) => fn && fn()).catch(() => {})
+    }
+  }, [userId])
+
+  return { isDevProbeConnected, pendingFromDevProbe }
 }

@@ -285,6 +285,7 @@ model ErrorSession {
   errorOutput  String             @db.Text
   tscRawOutput String?            @db.Text
   status       ErrorSessionStatus @default(PENDING)
+  source       String?            @default("manual")
 
   // Generated prompts
   identifyPrompt String? @db.Text

@@ -36,6 +36,10 @@ const ERROR_TYPE_LABELS: Record<string, string> = {
   OTHER: 'Other',
 }
 
+const SOURCE_BADGE: Record<string, string> = {
+  devprobe: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+}
+
 const ERROR_TYPE_COLORS: Record<string, string> = {
   TYPESCRIPT: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
   BUILD: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
@@ -130,6 +134,13 @@ export function ErrorSessionCard({
         >
           {ERROR_TYPE_LABELS[session.errorType] ?? session.errorType}
         </span>
+
+        {/* DevProbe source badge */}
+        {(session as unknown as Record<string, unknown>).sourceLabel === 'devprobe' && (
+          <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold shrink-0 bg-purple-500/10 text-purple-400 border-purple-500/20">
+            ⚡ DevProbe
+          </span>
+        )}
 
         {/* Timestamp */}
         <span

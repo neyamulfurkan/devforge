@@ -24,6 +24,7 @@ import {
 // 4. Internal imports — hooks
 import { useAuth } from '@/hooks/useAuth'
 import { useUIStore } from '@/store/uiStore'
+import { useDevProbeBridge } from '@/hooks/useDevProbeBridge'
 
 // 5. Internal imports — utils
 import { cn } from '@/lib/utils'
@@ -54,6 +55,7 @@ export function Sidebar({ collapsed = false }: SidebarProps): JSX.Element {
   const { user, logout } = useAuth()
   const { setSidebarOpen, toggleSidebarCollapsed } = useUIStore()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const { isDevProbeConnected, pendingFromDevProbe } = useDevProbeBridge(user?.id)
 
   const handleLogout = async (): Promise<void> => {
     setIsLoggingOut(true)
@@ -152,6 +154,35 @@ export function Sidebar({ collapsed = false }: SidebarProps): JSX.Element {
           })}
         </ul>
       </nav>
+
+      {/* ─── DevProbe status widget ───────────────────────────────────── */}
+      {isDevProbeConnected && (
+        <div className={cn(
+          'mx-2 mb-2 rounded-lg border border-[var(--accent-border)] bg-[var(--accent-light)] px-3 py-2',
+          collapsed && 'px-1 text-center'
+        )}>
+          {collapsed ? (
+            <div className="flex flex-col items-center gap-1">
+              <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)] animate-pulse" title="DevProbe connected" />
+              {pendingFromDevProbe > 0 && (
+                <span className="text-[9px] font-bold text-[var(--status-error)]">{pendingFromDevProbe}</span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent-primary)] animate-pulse flex-shrink-0" />
+                <span className="text-[11px] font-medium text-[var(--accent-primary)] truncate">DevProbe</span>
+              </div>
+              {pendingFromDevProbe > 0 && (
+                <span className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--status-error)] text-white">
+                  {pendingFromDevProbe}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ─── User profile section ─────────────────────────────────────── */}
       <div className="flex-shrink-0 p-2 border-t border-[var(--border-subtle)]">

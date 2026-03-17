@@ -26,6 +26,7 @@ import { QuickActions } from '@/components/dashboard/QuickActions'
 
 // 7. Internal imports — hooks, utils, types
 import { useAuth } from '@/hooks/useAuth'
+import { useDevProbeBridge } from '@/hooks/useDevProbeBridge'
 import { cn } from '@/lib/utils'
 import type { ApiResponse, Project, ActivityEntry } from '@/types'
 
@@ -143,6 +144,7 @@ export default function DashboardPage(): JSX.Element {
     queryFn: fetchStats,
     staleTime: 60_000,
   })
+  const { isDevProbeConnected, pendingFromDevProbe } = useDevProbeBridge(user?.id)
 
   const handleOpenProject = useCallback(
     (projectId: string) => {
@@ -169,6 +171,26 @@ export default function DashboardPage(): JSX.Element {
   return (
     <PageContainer>
       <div className="flex flex-col gap-6">
+
+        {/* DevProbe connection banner — shown when DevProbe is active */}
+        {isDevProbeConnected && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--accent-border)] bg-[var(--accent-light)] px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)] animate-pulse flex-shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-[var(--accent-primary)]">DevProbe Connected</p>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Automated audit errors are being streamed into your workspace error tabs.
+                  {pendingFromDevProbe > 0 && (
+                    <span className="ml-1 font-semibold text-[var(--status-error)]">
+                      {pendingFromDevProbe} new error{pendingFromDevProbe !== 1 ? 's' : ''} pending.
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Welcome banner — only visible when no projects exist */}
         <WelcomeBanner

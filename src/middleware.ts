@@ -26,6 +26,7 @@ export const config = {
     '/api/ai/(.*)',
     '/api/upload',
     '/api/search',
+    // /api/devprobe/* is intentionally excluded — DevProbe uses its own auth (Pusher channel ownership)
     // /api/public/* is intentionally excluded — no auth required
   ],
 }

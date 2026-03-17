@@ -13,7 +13,8 @@ import {
 } from 'lucide-react'
 
 // 6. Internal imports — hooks, utils, types
-import { useErrors } from '@/hooks/useErrors'
+import { useErrors, useDevProbeBridge } from '@/hooks/useErrors'
+import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
 import type { WorkspaceTab } from '@/types'
 
@@ -52,6 +53,9 @@ export function WorkspaceNav({
   projectId,
 }: WorkspaceNavProps): JSX.Element {
   const { pendingCount } = useErrors(projectId)
+  const { user } = useAuth()
+  const { pendingFromDevProbe } = useDevProbeBridge(user?.id)
+  const totalPending = pendingCount + pendingFromDevProbe
 
   return (
     <nav
@@ -75,12 +79,10 @@ export function WorkspaceNav({
               aria-selected={isActive}
               role="tab"
               className={cn(
-                // Base
                 'relative flex min-w-max flex-shrink-0 items-center gap-2 px-4 py-3',
                 'text-sm font-medium transition-colors duration-150',
                 'focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]',
                 'focus-visible:ring-inset outline-none',
-                // Active
                 isActive
                   ? 'text-[var(--text-primary)] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-[var(--accent-primary)]'
                   : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'
@@ -89,13 +91,12 @@ export function WorkspaceNav({
               <Icon className="h-4 w-4 flex-shrink-0" />
               <span>{tab.label}</span>
 
-              {/* Pending errors badge */}
-              {isErrorsTab && pendingCount > 0 && (
+              {isErrorsTab && totalPending > 0 && (
                 <span
                   className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-[var(--status-error)] px-1 text-[10px] font-bold text-white"
-                  aria-label={`${pendingCount} pending error${pendingCount !== 1 ? 's' : ''}`}
+                  aria-label={`${totalPending} pending error${totalPending !== 1 ? 's' : ''}`}
                 >
-                  {pendingCount > 99 ? '99+' : pendingCount}
+                  {totalPending > 99 ? '99+' : totalPending}
                 </span>
               )}
             </button>

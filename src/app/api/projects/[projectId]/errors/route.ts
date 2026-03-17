@@ -152,6 +152,9 @@ export async function POST(
       ])
     }
 
+    const incomingBody = body as Record<string, unknown>
+    const sourceLabel = typeof incomingBody.sourceLabel === 'string' ? incomingBody.sourceLabel : null
+
     const errorSession = await prisma.errorSession.create({
       data: {
         projectId,
@@ -160,6 +163,7 @@ export async function POST(
         tscRawOutput,
         identifyPrompt,
         replacePrompt,
+        ...(sourceLabel ? { sourceLabel } : {}),
       },
     })
 
