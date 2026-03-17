@@ -415,8 +415,8 @@ export const DEVFORGE_SEND_ERROR = 'APP_SEND_TO_DEVFORGE' as const
 export const DEVFORGE_SEND_ERROR_GROUP = 'APP_SEND_TO_DEVFORGE_GROUP' as const
 export const DEVFORGE_SEND_SUMMARY = 'APP_SEND_TO_DEVFORGE_SUMMARY' as const
 export const DEVFORGE_CONNECTION_TIMEOUT_MS = 5000 as const
-export const DEVFORGE_PING_INTERVAL_MS = 5 * 60 * 1000 as const
-export const DEVFORGE_STALE_THRESHOLD_MS = 5 * 60 * 1000 as const
+export const DEVFORGE_PING_INTERVAL_MS = 300000
+export const DEVFORGE_STALE_THRESHOLD_MS = 300000
 
 // Workspace tab definitions
 export const WORKSPACE_TABS = [
