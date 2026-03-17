@@ -549,7 +549,15 @@ STRICT RULES:
       if (dependentEntries.length > 0) {
         summaryParts.push(`↳ ${dependentEntries.length} dependent${dependentEntries.length !== 1 ? 's' : ''}: ${dependentEntries.map((d) => d.path).join(', ')}`)
       }
-      setCopySuccessMessage(summaryParts.join('\n'))
+      const summaryLines: string[] = [
+        `✓ GCD copied (phase-trimmed for phase ${filePhase})`,
+        `✓ FSP copied — FILE ${fileNumber}: ${filePath}`,
+        ...(copiedFilesList.length > 0 ? [`✓ Required files (${copiedFilesList.length}): ${copiedFilesList.join(', ')}`] : ['— No required files']),
+        ...(stubFilesList.length > 0 ? [`~ Registry stubs (${stubFilesList.length}): ${stubFilesList.join(', ')}`] : []),
+        ...(missingFilesList.length > 0 ? [`⚠ Not found (${missingFilesList.length}): ${missingFilesList.join(', ')}`] : []),
+        ...(dependentEntries.length > 0 ? [`↳ Dependents (${dependentEntries.length}): ${dependentEntries.map((d) => d.path).join(', ')}`] : []),
+      ]
+      setCopySuccessMessage(summaryLines.join('\n'))
       setCopyState('done')
       setTimeout(() => { setCopyState('idle'); setCopySuccessMessage('') }, 5000)
     } catch {
@@ -586,11 +594,21 @@ STRICT RULES:
 
       <ChevronRight className="h-3 w-3 text-[var(--text-tertiary)] flex-shrink-0 hidden sm:block" />
 
-      {/* Copy success details tooltip */}
+      {/* Copy success details — shown inline after copying */}
       {copyState === 'done' && copySuccessMessage && (
-        <div className="hidden lg:flex flex-col min-w-0 flex-shrink max-w-xs">
-          {copySuccessMessage.split('\n').slice(1).map((line, i) => (
-            <span key={i} className="text-[10px] font-mono text-[var(--status-complete)] truncate leading-tight">
+        <div className="hidden lg:flex flex-col min-w-0 flex-shrink max-w-sm gap-0.5">
+          {copySuccessMessage.split('\n').map((line, i) => (
+            <span
+              key={i}
+              className={cn(
+                'text-[10px] font-mono truncate leading-tight',
+                line.startsWith('✓') ? 'text-[var(--status-complete)]' :
+                line.startsWith('⚠') ? 'text-[var(--status-error)]' :
+                line.startsWith('~') ? 'text-[var(--status-in-progress)]' :
+                line.startsWith('↳') ? 'text-[var(--accent-primary)]' :
+                'text-[var(--text-tertiary)]'
+              )}
+            >
               {line}
             </span>
           ))}
