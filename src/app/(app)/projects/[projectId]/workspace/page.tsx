@@ -207,6 +207,7 @@ function NextFileBar({ projectId }: { projectId: string }): JSX.Element | null {
   const { document: docData } = useDocument(projectId)
   const { openFile } = useEditor(projectId)
   const [copyState, setCopyState] = React.useState<'idle' | 'loading' | 'done'>('idle')
+  const [copySuccessMessage, setCopySuccessMessage] = React.useState('')
 
   // Find the next file to work on: first EMPTY, then CODE_PASTED, ordered by fileNumber
   const nextFile = React.useMemo(() => {
@@ -530,8 +531,27 @@ STRICT RULES:
 - JSON must be the absolute last thing in your response`
 
       await navigator.clipboard.writeText(combined)
+      // Build a human-readable summary of what was copied
+      const copiedFilesList = results.map((r) => r.path)
+      const missingFilesList = missing.filter((m) => !m.stub).map((m) => m.path)
+      const stubFilesList = missing.filter((m) => m.stub).map((m) => m.path)
+
+      const summaryParts: string[] = [`FILE ${fileNumber} — ${filePath}`]
+      if (copiedFilesList.length > 0) {
+        summaryParts.push(`✓ ${copiedFilesList.length} required file${copiedFilesList.length !== 1 ? 's' : ''} included: ${copiedFilesList.join(', ')}`)
+      }
+      if (stubFilesList.length > 0) {
+        summaryParts.push(`~ ${stubFilesList.length} stub${stubFilesList.length !== 1 ? 's' : ''} from registry: ${stubFilesList.join(', ')}`)
+      }
+      if (missingFilesList.length > 0) {
+        summaryParts.push(`⚠ ${missingFilesList.length} not found: ${missingFilesList.join(', ')}`)
+      }
+      if (dependentEntries.length > 0) {
+        summaryParts.push(`↳ ${dependentEntries.length} dependent${dependentEntries.length !== 1 ? 's' : ''}: ${dependentEntries.map((d) => d.path).join(', ')}`)
+      }
+      setCopySuccessMessage(summaryParts.join('\n'))
       setCopyState('done')
-      setTimeout(() => setCopyState('idle'), 3000)
+      setTimeout(() => { setCopyState('idle'); setCopySuccessMessage('') }, 5000)
     } catch {
       setCopyState('idle')
     }
@@ -566,8 +586,19 @@ STRICT RULES:
 
       <ChevronRight className="h-3 w-3 text-[var(--text-tertiary)] flex-shrink-0 hidden sm:block" />
 
+      {/* Copy success details tooltip */}
+      {copyState === 'done' && copySuccessMessage && (
+        <div className="hidden lg:flex flex-col min-w-0 flex-shrink max-w-xs">
+          {copySuccessMessage.split('\n').slice(1).map((line, i) => (
+            <span key={i} className="text-[10px] font-mono text-[var(--status-complete)] truncate leading-tight">
+              {line}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Next file label */}
-      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+      <div className={cn('flex items-center gap-1.5 min-w-0 flex-1', copyState === 'done' ? 'hidden lg:flex' : 'flex')}>
         <span className="text-[10px] font-mono text-[var(--text-tertiary)] flex-shrink-0">
           Next:
         </span>
@@ -600,7 +631,7 @@ STRICT RULES:
             ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white opacity-80 cursor-wait'
             : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white shadow-sm hover:shadow-md active:scale-95'
         )}
-        title="Open this file in editor and copy GCD + prompt + required files to clipboard"
+        title={copyState === 'done' && copySuccessMessage ? copySuccessMessage : 'Open this file in editor and copy GCD + prompt + required files to clipboard'}
       >
         {copyState === 'loading' ? (
           <Loader2 className="h-3 w-3 animate-spin" />
@@ -621,9 +652,12 @@ STRICT RULES:
 function GitPushButton({ projectId }: { projectId: string }): JSX.Element {
   const [commitMsg, setCommitMsg] = React.useState('')
   const [copyState, setCopyState] = React.useState<'idle' | 'done'>('idle')
+  const [copiedPath, setCopiedPath] = React.useState(false)
 
   // Auto-populate commit message from last Claude response pasted in ApplyFixes
   // User can also type manually
+  const { getLocalState: getGitLocalState } = useEditorStore()
+  const { localFolderHandle } = getGitLocalState(projectId)
   const handleCopy = React.useCallback(async () => {
     const msg = commitMsg.trim() || 'update'
     const cmd = `git add . && git commit -m "${msg.replace(/"/g, "'")}" && git push`
@@ -634,6 +668,25 @@ function GitPushButton({ projectId }: { projectId: string }): JSX.Element {
 
   return (
     <div className="flex items-center gap-1.5 border-t border-[var(--border-subtle)] px-3 py-2 bg-[var(--bg-primary)]">
+      {localFolderHandle && (
+        <button
+          type="button"
+          onClick={async () => {
+            await navigator.clipboard.writeText(localFolderHandle.name)
+            setCopiedPath(true)
+            setTimeout(() => setCopiedPath(false), 2000)
+          }}
+          title={`Copy folder name: ${localFolderHandle.name}`}
+          className={cn(
+            'flex-shrink-0 flex items-center gap-1 h-6 px-2 rounded text-[10px] font-mono font-medium transition-all duration-150 border',
+            copiedPath
+              ? 'bg-[var(--status-complete-bg)] border-[var(--status-complete)]/40 text-[var(--status-complete)]'
+              : 'bg-[var(--bg-quaternary)] border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-emphasis)]'
+          )}
+        >
+          {copiedPath ? <><CheckCheck className="h-3 w-3" /> Copied!</> : <><Copy className="h-3 w-3" /> {localFolderHandle.name}</>}
+        </button>
+      )}
       <GitCommit className="h-3 w-3 text-[var(--text-tertiary)] flex-shrink-0" />
       <input
         type="text"
@@ -664,6 +717,7 @@ function EditorModeSwitcher({ projectId }: { projectId: string }): JSX.Element {
   const { isLocalMode, openLocalFolder, switchToDBMode, createProjectFolder } = useEditor(projectId)
   const { getLocalState } = useEditorStore()
   const { localFolderHandle } = getLocalState(projectId)
+  const [copiedPath, setCopiedPath] = React.useState(false)
   const [creating, setCreating] = React.useState(false)
   const [mismatchInfo, setMismatchInfo] = React.useState<{
     matchPct: number

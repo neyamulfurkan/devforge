@@ -25,6 +25,7 @@ interface CopyButtonProps {
   size?: 'sm' | 'md' | 'lg'
   className?: string
   label?: string
+  successMessage?: string
 }
 
 // Size variant config
@@ -48,6 +49,7 @@ export function CopyButton({
   size = 'md',
   className,
   label,
+  successMessage,
 }: CopyButtonProps): JSX.Element {
   const [copied, setCopied] = useState(false)
 
@@ -113,13 +115,13 @@ export function CopyButton({
 
             {/* Optional label text */}
             {label && (
-              <span className="ml-6 text-[13px] font-medium">{copied ? 'Copied!' : label}</span>
+              <span className="ml-6 text-[13px] font-medium">{copied ? (successMessage ?? 'Copied!') : label}</span>
             )}
           </button>
         </TooltipTrigger>
 
         <TooltipContent side="top" className="text-xs">
-          {copied ? 'Copied!' : 'Copy to clipboard'}
+          {copied ? (successMessage ?? 'Copied!') : 'Copy to clipboard'}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
