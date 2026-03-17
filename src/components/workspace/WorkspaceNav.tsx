@@ -1,5 +1,8 @@
 'use client'
 
+// 1. React imports
+import { useMemo } from 'react'
+
 // 3. Third-party library imports
 import {
   LayoutDashboard,
@@ -8,13 +11,11 @@ import {
   Code,
   MessageSquare,
   AlertCircle,
-  Terminal,
   Download,
 } from 'lucide-react'
 
 // 6. Internal imports — hooks, utils, types
-import { useErrors, useDevProbeBridge } from '@/hooks/useErrors'
-import { useAuth } from '@/hooks/useAuth'
+import { useErrors } from '@/hooks/useErrors'
 import { cn } from '@/lib/utils'
 import type { WorkspaceTab } from '@/types'
 
@@ -32,7 +33,7 @@ interface TabConfig {
   icon: React.ElementType
 }
 
-// ─── Tab config ───────────────────────────────────────────────────────────────
+// ─── Tab configuration ────────────────────────────────────────────────────────
 
 const TABS: TabConfig[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -41,7 +42,6 @@ const TABS: TabConfig[] = [
   { id: 'editor', label: 'Editor', icon: Code },
   { id: 'prompts', label: 'Prompts', icon: MessageSquare },
   { id: 'errors', label: 'Errors', icon: AlertCircle },
-  { id: 'setup', label: 'Setup', icon: Terminal },
   { id: 'export', label: 'Export', icon: Download },
 ]
 
@@ -53,9 +53,11 @@ export function WorkspaceNav({
   projectId,
 }: WorkspaceNavProps): JSX.Element {
   const { pendingCount } = useErrors(projectId)
-  const { user } = useAuth()
-  const { pendingFromDevProbe } = useDevProbeBridge(user?.id)
-  const totalPending = pendingCount + pendingFromDevProbe
+
+  // Format pending count for display (cap at 99+)
+  const displayCount = useMemo(() => {
+    return pendingCount > 99 ? '99+' : pendingCount.toString()
+  }, [pendingCount])
 
   return (
     <nav
@@ -70,6 +72,7 @@ export function WorkspaceNav({
           const isActive = tab.id === activeTab
           const Icon = tab.icon
           const isErrorsTab = tab.id === 'errors'
+          const showBadge = isErrorsTab && pendingCount > 0
 
           return (
             <button
@@ -91,12 +94,12 @@ export function WorkspaceNav({
               <Icon className="h-4 w-4 flex-shrink-0" />
               <span>{tab.label}</span>
 
-              {isErrorsTab && totalPending > 0 && (
+              {showBadge && (
                 <span
                   className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-[var(--status-error)] px-1 text-[10px] font-bold text-white"
-                  aria-label={`${totalPending} pending error${totalPending !== 1 ? 's' : ''}`}
+                  aria-label={`${pendingCount} pending error${pendingCount !== 1 ? 's' : ''}`}
                 >
-                  {totalPending > 99 ? '99+' : totalPending}
+                  {displayCount}
                 </span>
               )}
             </button>

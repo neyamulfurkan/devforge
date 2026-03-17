@@ -1,63 +1,63 @@
-// This API route file is deprecated.
-// All functionality has been moved to src/hooks/useProject.ts
-// This file should be deleted.
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { auth } from '@/lib/auth'
+import { ErrorType } from '@prisma/client'
 
-import { NextResponse } from 'next/server'
-
-export async function POST() {
-  return NextResponse.json(
-    { error: 'This endpoint is deprecated. Use the client-side hook instead.' },
-    { status: 410 }
-  )
-}
-  const queryClient = useQueryClient()
-  const setCurrentProject = useProjectStore((s) => s.setCurrentProject)
-  const updateFileStatusInStore = useProjectStore((s) => s.updateFileStatus)
-  const {
-    data: project,
-    isLoading,
-    error,
-    refetch,
-  } = useQuery<Project, Error>({
-    queryKey: ['project', projectId],
-    queryFn: () => fetchProject(projectId),
-    enabled: Boolean(projectId),
-    staleTime: 10_000,
-  })
-  // Sync fetched project into global store
-  useEffect(() => {
-    if (project) {
-      setCurrentProject(project.id, project)
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  try {
+    const session = await auth()
+    if (!session?.user?.id) {
+      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
     }
-  }, [project, setCurrentProject])
-  const updateStatusMutation = useMutation<Project, Error, UpdateStatusParams>({
-    mutationFn: (params) => patchProject(projectId, params),
-    onSuccess: (updatedProject) => {
-      queryClient.setQueryData<Project>(['project', projectId], updatedProject)
-      setCurrentProject(updatedProject.id, updatedProject)
-    },
-  })
-  const updateFileMutation = useMutation<void, Error, UpdateFileParams>({
-    mutationFn: ({ fileId, updates }) => patchFile(projectId, fileId, updates),
-    onMutate: ({ fileId, updates }) => {
-      // Optimistic update for file status changes
-      if (updates.status) {
-        updateFileStatusInStore(fileId, updates.status)
-      }
-    },
-    onSettled: () => {
-      // Revalidate file list after mutation settles
-      queryClient.invalidateQueries({ queryKey: ['files', projectId] })
-    },
-  })
-  return {
-    project: project ?? null,
-    isLoading,
-    error,
-    refetch,
-    updateStatus: (params: UpdateStatusParams) => updateStatusMutation.mutate(params),
-    updateFile: (params: UpdateFileParams) => updateFileMutation.mutate(params),
-    isUpdatingStatus: updateStatusMutation.isPending,
-    isUpdatingFile: updateFileMutation.isPending,
+
+    const userId = session.user.id
+    const body = await request.json() as {
+      projectId: string
+      errorType: string
+      errorOutput: string
+      source?: string
+      engine?: string
+      identifiedFiles?: string[]
+    }
+
+    // Verify user owns the project
+    const project = await prisma.project.findUnique({
+      where: { id: body.projectId },
+    })
+
+    if (!project || project.userId !== userId) {
+      return NextResponse.json({ message: 'Project not found or unauthorized' }, { status: 404 })
+    }
+
+    // Map to valid ErrorType enum
+    const validErrorTypes: ErrorType[] = ['TYPESCRIPT', 'BUILD', 'RUNTIME', 'CONSOLE', 'OTHER']
+    const errorType = (validErrorTypes.includes(body.errorType as ErrorType) 
+      ? body.errorType 
+      : 'OTHER') as ErrorType
+
+    // Create error session
+    const errorSession = await prisma.errorSession.create({
+      data: {
+        projectId: project.id,
+        errorType,
+        errorOutput: `[DevProbe${body.engine ? ` — ${body.engine}` : ''}]\n${body.errorOutput}`,
+        status: 'PENDING',
+        identifiedFiles: body.identifiedFiles ?? [],
+      },
+    })
+
+    return NextResponse.json(
+      { 
+        data: errorSession,
+        message: 'Error session created successfully'
+      },
+      { status: 201 }
+    )
+  } catch (error) {
+    console.error('POST /api/devprobe/ingest failed:', error)
+    return NextResponse.json(
+      { message: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }
