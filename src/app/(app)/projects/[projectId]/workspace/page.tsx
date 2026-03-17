@@ -251,8 +251,7 @@ function NextFileBar({ projectId }: { projectId: string }): JSX.Element | null {
               const target = targetPath.replace(/^\/+/, '')
               if (
                 nodePath === target ||
-                nodePath.endsWith('/' + target) ||
-                target.endsWith('/' + nodePath)
+                nodePath.endsWith('/' + target)
               ) return node
             }
             if (node.type === 'folder' && node.children?.length) {
@@ -368,7 +367,6 @@ function NextFileBar({ projectId }: { projectId: string }): JSX.Element | null {
             const nodePath = node.path.replace(/^\/+/, '')
             const nodeFilename = nodePath.split('/').pop() ?? ''
             const isMatch = nodePath === normalised || nodePath.endsWith('/' + normalised) ||
-              normalised.endsWith('/' + nodePath) ||
               (requiredFilename.length > 5 && nodeFilename === requiredFilename)
             if (isMatch) {
               try {
@@ -1384,14 +1382,19 @@ FORMAT (mandatory):
 ]
 \`\`\`
 
+FILE PATH RULES:
+- Use forward slashes only: "src/hooks/useProject.ts" NOT "src\\hooks\\useProject.ts"
+- No leading slash: "src/hooks/useProject.ts" NOT "/src/hooks/useProject.ts"
+- No leading dot-slash: "src/hooks/useProject.ts" NOT "./src/hooks/useProject.ts"
+
 CRITICAL RULES FOR search STRING:
-- Keep search to 1-4 lines MAXIMUM — it is only an anchor, not the full block
-- Pick the most unique line(s) near the change — function signature, unique className, unique comment
-- search must appear EXACTLY ONCE in the entire file — if not unique, add 1 more surrounding line
-- NEVER put more than 4 lines in search — split into multiple entries instead
-- NEVER truncate, summarize, or use ellipsis in search — copy character for character
+- search must appear EXACTLY ONCE in the entire file — this is the most important rule
+- Use enough lines to be unique — for large files (500+ lines) use 3-6 lines minimum
+- Always include the full line(s) — never truncate, never use ellipsis, copy character for character including all whitespace and indentation
+- Include surrounding context lines if the target line alone could appear elsewhere
+- For a function: include the full function signature line as the anchor
+- For JSX: include the full opening tag with all its props as the anchor
 - replace can be ANY length — put the complete new code here, no limits
-- To replace a large block: use the first unique line as search, write the entire new block in replace
 
 COMPLETENESS RULES — NEVER break anything:
 - replace must be 100% complete — no placeholders, no '// ... existing code ...', no '// TODO'
@@ -1399,21 +1402,25 @@ COMPLETENESS RULES — NEVER break anything:
 - Never guess types, props, or variable names — only use what you can see in the provided files
 - If a function needs to stay unchanged, copy it exactly into replace
 - Never omit closing brackets, braces, or tags
-- If you are unsure about any part, include MORE context in search to confirm what you are replacing
+
+JSON ENCODING RULES:
+- Backslashes in code must be doubled in JSON: \\\\ not \\
+- Backticks, template literals, dollar signs are all safe in JSON strings
+- Multi-line search/replace: keep each entry to a SINGLE LINE where possible
+- If you must include multiple lines, use \\n to represent newlines inside the JSON string value
+- NEVER include a literal line break inside a JSON string value — this makes the JSON invalid
+
+SEARCH STRING UNIQUENESS RULE:
+- If your single-line search might appear more than once in the file, add the line immediately before OR after it to make it unique
+- The combined string must appear EXACTLY ONCE — test mentally before writing
+- For large files like workspace/page.tsx (2000+ lines): always use at least 2 lines
 
 Other rules:
 - One object per change location — multiple objects for multiple files or spots
 - NO text before or after the JSON array
 - NO explanation of what you changed
 
-IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON — it handles all special characters safely:
-
-FILE: exact/path/from/project/root.ts
-SEARCH:
-exact code to find
-REPLACE:
-new code
----
+IMPORTANT: JSON handles ALL special characters safely. Always use JSON array format only. Never any other format.
 
 Now describe the bug:`,
 
@@ -1430,11 +1437,16 @@ FORMAT (mandatory):
 ]
 \`\`\`
 
+FILE PATH RULES:
+- Use forward slashes only: "src/hooks/useProject.ts" NOT "src\\hooks\\useProject.ts"
+- No leading slash: "src/hooks/useProject.ts" NOT "/src/hooks/useProject.ts"
+- No leading dot-slash: "src/hooks/useProject.ts" NOT "./src/hooks/useProject.ts"
+
 CRITICAL RULES FOR search STRING:
-- Keep search to 1-4 lines MAXIMUM — it is only an anchor, not the full block
-- Pick the most unique line(s) near the change — function signature, unique className, unique comment
-- search must appear EXACTLY ONCE in the entire file — if not unique, add 1 more surrounding line
-- NEVER put more than 4 lines in search — split into multiple entries instead
+- search must appear EXACTLY ONCE in the entire file — this is the most important rule
+- Use enough lines to be unique — for large files (500+ lines) use 3-6 lines minimum
+- Always include the full line(s) — never truncate, never use ellipsis, copy character for character including all whitespace and indentation
+- Include surrounding context lines if the target line alone could appear elsewhere
 - replace can be ANY length — put the complete new code here, no limits
 
 COMPLETENESS RULES — NEVER break anything:
@@ -1443,18 +1455,23 @@ COMPLETENESS RULES — NEVER break anything:
 - Never guess types, props, or variable names — only use what you can see in the provided files
 - Never omit closing brackets, braces, or tags
 
+JSON ENCODING RULES:
+- Backslashes in code must be doubled in JSON: \\\\ not \\
+- Backticks, template literals, dollar signs are all safe in JSON strings
+- Multi-line search/replace: keep each entry to a SINGLE LINE where possible
+- If you must include multiple lines, use \\n to represent newlines inside the JSON string value
+- NEVER include a literal line break inside a JSON string value — this makes the JSON invalid
+
+SEARCH STRING UNIQUENESS RULE:
+- If your single-line search might appear more than once in the file, add the line immediately before OR after it to make it unique
+- The combined string must appear EXACTLY ONCE — test mentally before writing
+- For large files like workspace/page.tsx (2000+ lines): always use at least 2 lines
+
 Other rules:
 - One entry per change location — multiple entries for multiple files or spots
 - NO prose, NO explanation — ONLY the JSON array
 
-IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
-
-FILE: exact/path/from/project/root.ts
-SEARCH:
-exact code to find
-REPLACE:
-new code
----
+IMPORTANT: JSON handles ALL special characters safely. Always use JSON array format only. Never any other format.
 
 Describe the feature modification:`,
 
@@ -1471,28 +1488,40 @@ FORMAT (mandatory):
 ]
 \`\`\`
 
+FILE PATH RULES:
+- Use forward slashes only: "src/hooks/useProject.ts" NOT "src\\hooks\\useProject.ts"
+- No leading slash: "src/hooks/useProject.ts" NOT "/src/hooks/useProject.ts"
+- No leading dot-slash: "src/hooks/useProject.ts" NOT "./src/hooks/useProject.ts"
+
 CRITICAL RULES FOR search STRING:
-- Keep search to 1-4 lines MAXIMUM — it is only an anchor, not the full block
-- Pick the most unique line near where you want to insert — a unique comment, function name, or import
-- search must appear EXACTLY ONCE in the file
+- search must appear EXACTLY ONCE in the file — this is the most important rule
+- Use enough lines to be unique — for large files (500+ lines) use 3-6 lines minimum
+- Always include the full line(s) with exact whitespace and indentation
 - NEVER use empty string for search
 - replace can be ANY length — include the anchor line PLUS all the new code to insert
+- Always include the original anchor line in replace so nothing is deleted accidentally
 
 COMPLETENESS RULES — NEVER break anything:
 - replace must be 100% complete — no placeholders, no '// ... existing code ...', no '// TODO'
-- Always include the original anchor line in replace so nothing is deleted accidentally
 - Every new function, handler, import must be fully written
 - Never guess types or variable names — only use what you see in the provided files
+
+JSON ENCODING RULES:
+- Backslashes in code must be doubled in JSON: \\\\ not \\
+- Backticks, template literals, dollar signs are all safe in JSON strings
+- Multi-line search/replace: keep each entry to a SINGLE LINE where possible
+- If you must include multiple lines, use \\n to represent newlines inside the JSON string value
+- NEVER include a literal line break inside a JSON string value — this makes the JSON invalid
+
+SEARCH STRING UNIQUENESS RULE:
+- If your single-line search might appear more than once in the file, add the line immediately before OR after it to make it unique
+- The combined string must appear EXACTLY ONCE — test mentally before writing
+- For large files like workspace/page.tsx (2000+ lines): always use at least 2 lines
+
+Other rules:
 - NO explanation — ONLY the JSON array
 
-IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
-
-FILE: exact/path/from/project/root.ts
-SEARCH:
-exact code to find
-REPLACE:
-new code
----
+IMPORTANT: JSON handles ALL special characters safely. Always use JSON array format only. Never any other format.
 
 Describe the feature to add:`,
 
@@ -1509,10 +1538,15 @@ FORMAT (mandatory):
 ]
 \`\`\`
 
+FILE PATH RULES:
+- Use forward slashes only: "src/hooks/useProject.ts" NOT "src\\hooks\\useProject.ts"
+- No leading slash: "src/hooks/useProject.ts" NOT "/src/hooks/useProject.ts"
+- No leading dot-slash: "src/hooks/useProject.ts" NOT "./src/hooks/useProject.ts"
+
 CRITICAL RULES FOR search STRING:
-- Keep search to 1-4 lines MAXIMUM — it is only an anchor
-- Pick the most unique line(s) in the block to refactor
-- search must appear EXACTLY ONCE in the file
+- search must appear EXACTLY ONCE in the file — this is the most important rule
+- Use enough lines to be unique — for large files (500+ lines) use 3-6 lines minimum
+- Always include the full line(s) with exact whitespace and indentation — never truncate
 - replace can be ANY length — write the complete refactored version
 
 COMPLETENESS RULES — NEVER break anything:
@@ -1520,16 +1554,23 @@ COMPLETENESS RULES — NEVER break anything:
 - No placeholders, no '// ... existing code ...', no '// TODO'
 - Every function signature, every type annotation must be preserved or explicitly changed
 - Never omit closing brackets, braces, or tags
+
+JSON ENCODING RULES:
+- Backslashes in code must be doubled in JSON: \\\\ not \\
+- Backticks, template literals, dollar signs are all safe in JSON strings
+- Multi-line search/replace: keep each entry to a SINGLE LINE where possible
+- If you must include multiple lines, use \\n to represent newlines inside the JSON string value
+- NEVER include a literal line break inside a JSON string value — this makes the JSON invalid
+
+SEARCH STRING UNIQUENESS RULE:
+- If your single-line search might appear more than once in the file, add the line immediately before OR after it to make it unique
+- The combined string must appear EXACTLY ONCE — test mentally before writing
+- For large files like workspace/page.tsx (2000+ lines): always use at least 2 lines
+
+Other rules:
 - NO explanation — ONLY the JSON array
 
-IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
-
-FILE: exact/path/from/project/root.ts
-SEARCH:
-exact code to find
-REPLACE:
-new code
----
+IMPORTANT: JSON handles ALL special characters safely. Always use JSON array format only. Never any other format.
 
 Describe what to refactor:`,
 
@@ -1546,10 +1587,17 @@ FORMAT (mandatory):
 ]
 \`\`\`
 
+FILE PATH RULES:
+- Use forward slashes only: "src/hooks/useProject.ts" NOT "src\\hooks\\useProject.ts"
+- No leading slash: "src/hooks/useProject.ts" NOT "/src/hooks/useProject.ts"
+- No leading dot-slash: "src/hooks/useProject.ts" NOT "./src/hooks/useProject.ts"
+
 CRITICAL RULES FOR search STRING:
-- Keep search to 1-4 lines MAXIMUM — it is only an anchor
-- Pick the exact line containing the type error — copy it character for character
-- search must appear EXACTLY ONCE in the file — add 1 surrounding line if not unique
+- search must appear EXACTLY ONCE in the file — this is the most important rule
+- For TypeScript errors: include the full line reported in the error PLUS 1-2 surrounding lines for uniqueness
+- Always copy exact whitespace and indentation — TypeScript files are indentation-sensitive
+- For type annotation errors: include the full variable/function declaration line
+- For import errors: include the full import statement line
 - replace can be ANY length — write the complete fixed version
 
 COMPLETENESS RULES — NEVER break anything:
@@ -1557,16 +1605,23 @@ COMPLETENESS RULES — NEVER break anything:
 - replace must be 100% complete — no placeholders
 - If fix requires a new import, add a separate entry targeting the existing import block
 - Never guess types — only use types visible in the provided files
+
+JSON ENCODING RULES:
+- Backslashes in code must be doubled in JSON: \\\\ not \\
+- Backticks, template literals, dollar signs are all safe in JSON strings
+- Multi-line search/replace: keep each entry to a SINGLE LINE where possible
+- If you must include multiple lines, use \\n to represent newlines inside the JSON string value
+- NEVER include a literal line break inside a JSON string value — this makes the JSON invalid
+
+SEARCH STRING UNIQUENESS RULE:
+- If your single-line search might appear more than once in the file, add the line immediately before OR after it to make it unique
+- The combined string must appear EXACTLY ONCE — test mentally before writing
+- For large files like workspace/page.tsx (2000+ lines): always use at least 2 lines
+
+Other rules:
 - NO explanation — ONLY the JSON array
 
-IMPORTANT: If any search or replace value contains backticks, template literals, or regex patterns, use the plain-text format instead of JSON:
-
-FILE: exact/path/from/project/root.ts
-SEARCH:
-exact code to find
-REPLACE:
-new code
----
+IMPORTANT: JSON handles ALL special characters safely. Always use JSON array format only. Never any other format.
 
 Paste the TypeScript error output:`,
 }
@@ -1591,7 +1646,7 @@ const [copiedFiles, setCopiedFiles] = React.useState(false)
 
 const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
     const entries: FixEntry[] = []
-    const blocks = raw.split(/^---\s*$/m).map((b) => b.trim()).filter(Boolean)
+    const blocks = (raw.trimEnd() + '\n---').split(/^---[ \t]*$/m).map((b) => b.trim()).filter(Boolean)
     if (blocks.length === 0) return null
     for (const block of blocks) {
       const fileMatch = block.match(/^FILE:\s*(.+)$/m)
@@ -1619,16 +1674,24 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
     }
     // ── Attempt 1: JSON format ──
     try {
-      const fenceStart = input.indexOf('```')
       let jsonStr: string
-      if (fenceStart !== -1) {
-        const afterFence = input.indexOf('\n', fenceStart) + 1
-        const closeFence = input.indexOf('```', afterFence)
-        jsonStr = closeFence !== -1 ? input.slice(afterFence, closeFence).trim() : input.slice(afterFence).trim()
+      // Find the JSON array by locating the first [ and matching its closing ]
+      // This is more robust than regex — handles nested backticks in replace values
+      const firstBracket = input.indexOf('[')
+      const lastBracket = input.lastIndexOf(']')
+      if (firstBracket !== -1 && lastBracket > firstBracket) {
+        jsonStr = input.slice(firstBracket, lastBracket + 1).trim()
       } else {
-        jsonStr = input.trim()
+        throw new Error('no JSON array found')
       }
       jsonStr = jsonStr.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+      // Sanitize literal newlines inside JSON string values — Claude sometimes
+      // writes multi-line strings without \n escaping, making the JSON invalid.
+      // This regex replaces literal newlines that appear inside quoted strings
+      // with the escaped \n sequence so JSON.parse succeeds.
+      jsonStr = jsonStr.replace(/"((?:[^"\\]|\\.|\n|\r)*)"/gm, (match) =>
+        match.replace(/\r\n/g, '\\n').replace(/\r/g, '\\n').replace(/\n/g, '\\n')
+      )
       const data = JSON.parse(jsonStr) as unknown
       if (!Array.isArray(data)) throw new Error('not an array')
       for (const entry of data) {
@@ -1636,7 +1699,13 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
         if (typeof (entry as Record<string, unknown>).search !== 'string') throw new Error('missing search')
         if (typeof (entry as Record<string, unknown>).replace !== 'string') throw new Error('missing replace')
       }
-      setParsed(data as FixEntry[])
+      // Unescape \n sequences in search/replace so content.includes() works
+      const entries = (data as FixEntry[]).map((e) => ({
+        file: e.file,
+        search: e.search.replace(/\\n/g, '\n').replace(/\\t/g, '\t'),
+        replace: e.replace.replace(/\\n/g, '\n').replace(/\\t/g, '\t'),
+      }))
+      setParsed(entries)
       setParseError(null)
       return
     } catch {
@@ -1659,7 +1728,7 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
       }
     }
     setParsed(null)
-    setParseError('Could not parse — paste a JSON array or use the plain-text format:\nFILE: path\nSEARCH:\ncode\nREPLACE:\nnew code\n---')
+        setParseError('Could not parse — paste the JSON array exactly as Claude returned it. Make sure the response starts with [ and contains objects with "file", "search", and "replace" keys.')
   }, [input, parsePlainText])
 
   // Parse Claude's file list response
@@ -1706,7 +1775,8 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
     const blocks: string[] = []
     const notFound: string[] = []
 
-    for (const filePath of parsedFileList) {
+    for (const rawFilePath of parsedFileList) {
+      const filePath = rawFilePath.replace(/^\.\//, '').replace(/\\/g, '/')
       const handle = findHandle(localFileTree, filePath)
       if (!handle) {
         notFound.push(filePath)
@@ -1722,7 +1792,7 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
       }
     }
 
-    const fixInstruction = `\n\n${sep}\nNOW PROVIDE FIXES\n${sep}\n\nYou have read all the files above. Now provide ALL fixes as a JSON array:\n\n[\n  {\n    "file": "exact/path/from/project/root.ts",\n    "search": "COMPLETE exact text including every comment, blank line, and indentation — copy character for character",\n    "replace": "exact replacement"\n  }\n]\n\nCRITICAL: search must be the COMPLETE exact text as it appears in the file — every comment, blank line, space included. ONLY the JSON array in your response.`
+    const fixInstruction = `\n\n${sep}\nNOW PROVIDE FIXES\n${sep}\n\nYou have read all the files above. Now provide ALL fixes as a JSON array:\n\n[\n  {\n    "file": "exact/path/from/project/root.ts",\n    "search": "exact unique line to find — must appear EXACTLY ONCE in the file",\n    "replace": "complete replacement code"\n  }\n]\n\nSEARCH STRING RULES:\n- Keep search to a SINGLE LINE where possible — most reliable\n- search must appear EXACTLY ONCE — add surrounding line if not unique\n- Copy exact whitespace and indentation character for character\n- If multi-line needed: use \\\\n inside the JSON string, NEVER literal line breaks\n- Forward slashes in file paths, no leading ./ or /\n\nONLY the JSON array in your response. No explanation before or after.`
 
     const combined = blocks.join('\n\n') + fixInstruction
 
@@ -1742,11 +1812,7 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
     for (const node of nodes) {
       if (node.type === 'file') {
         const nodePath = norm(node.path)
-        if (
-          nodePath === target ||
-          nodePath.endsWith('/' + target) ||
-          target.endsWith('/' + nodePath)
-        ) {
+        if (nodePath === target || nodePath.endsWith('/' + target)) {
           return node.handle as FileSystemFileHandle
         }
       }
@@ -1776,12 +1842,13 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
     const newResults: ApplyFixesResult[] = []
 
     for (const entry of parsed) {
-      const handle = findHandle(localFileTree, entry.file)
+      const normalizedEntryFile = entry.file.replace(/^\.\//, '').replace(/\\/g, '/')
+      const handle = findHandle(localFileTree, normalizedEntryFile)
       if (!handle) {
         newResults.push({
-          file: entry.file,
+          file: normalizedEntryFile,
           status: 'no_handle',
-          message: `File not found in linked folder: ${entry.file}`,
+          message: `File not found in linked folder: ${normalizedEntryFile}`,
         })
         continue
       }
@@ -1800,17 +1867,76 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
         const occurrenceCount = content.split(normalizedSearch).length - 1
         if (occurrenceCount > 1) {
           newResults.push({
-            file: entry.file,
+            file: normalizedEntryFile,
             status: 'error',
-            message: `Ambiguous: "${normalizedSearch.slice(0, 40)}…" found ${occurrenceCount} times in ${entry.file} — make search string more specific`,
+            message: `Ambiguous: "${normalizedSearch.slice(0, 40)}…" found ${occurrenceCount} times in ${normalizedEntryFile} — add 1-2 surrounding lines to make the search unique`,
           })
           continue
         }
         if (!content.includes(normalizedSearch)) {
+          // Fallback: try matching with normalized indentation
+          // Claude sometimes omits or wrong-guesses leading indentation
+          const searchLines = normalizedSearch.split('\n')
+          const contentLines = content.split('\n')
+          let matchStartLine = -1
+          const firstSearchTrimmed = searchLines[0].trim()
+          if (firstSearchTrimmed) {
+            for (let li = 0; li < contentLines.length; li++) {
+              if ((contentLines[li] ?? '').trim() === firstSearchTrimmed) {
+                let allMatch = true
+                for (let si = 1; si < searchLines.length; si++) {
+                  const contentLine = contentLines[li + si]
+                  const searchLine = searchLines[si]
+                  if (contentLine === undefined || contentLine.trim() !== (searchLine ?? '').trim()) {
+                    allMatch = false
+                    break
+                  }
+                }
+                if (allMatch) { matchStartLine = li; break }
+              }
+            }
+          }
+          if (matchStartLine === -1) {
+            newResults.push({
+              file: normalizedEntryFile,
+              status: 'not_found',
+              message: `Search string not found in ${normalizedEntryFile}. Check that the search text matches the file content.`,
+            })
+            continue
+          }
+          // Rebuild search with correct indentation from the actual file
+          const actualIndent = (contentLines[matchStartLine] ?? '').match(/^(\s*)/)?.[1] ?? ''
+          const searchIndent = (searchLines[0] ?? '').match(/^(\s*)/)?.[1] ?? ''
+          const reindentedSearch = searchLines
+            .map((line, idx) => {
+              if (idx === 0) return contentLines[matchStartLine] ?? line
+              const withoutSearchIndent = line.startsWith(searchIndent) ? line.slice(searchIndent.length) : line.trim()
+              return withoutSearchIndent ? actualIndent + withoutSearchIndent : line
+            })
+            .join('\n')
+          if (!content.includes(reindentedSearch)) {
+            newResults.push({
+              file: normalizedEntryFile,
+              status: 'not_found',
+              message: `Search string not found in ${normalizedEntryFile}. Check that the search text matches the file content.`,
+            })
+            continue
+          }
+          const reindentedReplace = normalizedReplace.split('\n')
+            .map((line, idx) => {
+              if (idx === 0) return line.trim() ? actualIndent + line.trim() : line
+              const withoutSearchIndent = line.startsWith(searchIndent) ? line.slice(searchIndent.length) : line.trim()
+              return withoutSearchIndent ? actualIndent + withoutSearchIndent : line
+            })
+            .join('\n')
+          const newContent = content.replace(reindentedSearch, reindentedReplace)
+          const writable = await handle.createWritable()
+          await writable.write(newContent)
+          await writable.close()
           newResults.push({
-            file: entry.file,
-            status: 'not_found',
-            message: `Search string not found in ${entry.file}`,
+            file: normalizedEntryFile,
+            status: 'applied',
+            message: `Applied to ${normalizedEntryFile} (indentation auto-corrected)`,
           })
           continue
         }
@@ -1822,13 +1948,13 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
         await writable.close()
 
         newResults.push({
-          file: entry.file,
+          file: normalizedEntryFile,
           status: 'applied',
-          message: `Applied to ${entry.file}`,
+          message: `Applied to ${normalizedEntryFile}`,
         })
       } catch (e) {
         newResults.push({
-          file: entry.file,
+          file: normalizedEntryFile,
           status: 'error',
           message: `Error: ${e instanceof Error ? e.message : 'Unknown error'}`,
         })

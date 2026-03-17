@@ -309,27 +309,33 @@ RESPONSE FORMAT (mandatory):
 ]
 \`\`\`
 
-RULES:
-1. Response MUST be ONLY a JSON array — NO prose, NO explanation, NO markdown outside the array
-2. NO text before the JSON array (no preamble)
-3. NO text after the JSON array (no explanation)
-4. All special characters (backticks, regex patterns, template literals, quotes) are handled automatically by JSON string escaping — NO alternative format
-5. Each search string must appear EXACTLY ONCE in the file — add surrounding context if needed
-6. Replace strings can be ANY length and must be 100% complete with no placeholders
-7. One object per change location — multiple objects for multiple changes
+FILE PATH RULES:
+- Use forward slashes only: "src/hooks/useProject.ts" NOT "src\\\\hooks\\\\useProject.ts"
+- No leading slash: "src/hooks/useProject.ts" NOT "/src/hooks/useProject.ts"
+- No leading dot-slash: "src/hooks/useProject.ts" NOT "./src/hooks/useProject.ts"
 
-IMPORTANT: JSON strings handle all special characters safely. You do NOT need a plain-text format. All characters including backticks \`\`, dollar signs \$, regex patterns, and template literals \$\{...\} must be written as JSON string values (with proper escaping inside quotes).
+SEARCH STRING RULES:
+1. search must appear EXACTLY ONCE in the file — this is the most important rule
+2. Keep search to a SINGLE LINE where possible — single-line search is most reliable
+3. For large files (500+ lines): use 2-3 lines minimum to ensure uniqueness
+4. If multi-line is needed, represent newlines as \\n inside the JSON string — NEVER use literal line breaks inside a JSON string value — this makes JSON invalid
+5. Always copy exact whitespace and indentation — matching is character-for-character
+6. If single-line search might appear more than once, add the line immediately before OR after it to make it unique
 
-Example with backticks in code:
-\`\`\`json
-[
-  {
-    "file": "src/file.ts",
-    "search": "const x = \`template literal\`",
-    "replace": "const x = \`new template\`"
-  }
-]
-\`\`\`
+REPLACE STRING RULES:
+- replace can be ANY length — write the complete replacement with no limits
+- replace must be 100% complete — no placeholders, no '// ... existing code ...', no '// TODO'
+- Every import, every function, every handler must be fully written
+
+JSON ENCODING RULES:
+- Backslashes in code must be doubled in JSON: \\\\\\\\ not \\\\
+- Backticks, template literals, dollar signs are all safe in JSON strings
+- NEVER include a literal line break inside a JSON string value
+
+OTHER RULES:
+- NO prose, NO explanation — ONLY the JSON array
+- NO text before or after the array
+- One object per change location — multiple objects for multiple files or spots
 
 Do NOT invent alternative formats. JSON is sufficient for ALL cases.`
 
@@ -377,27 +383,33 @@ RESPONSE FORMAT (mandatory):
 ]
 \`\`\`
 
-RULES:
-1. Response MUST be ONLY a JSON array — NO prose, NO explanation, NO markdown outside the array
-2. NO text before the JSON array (no preamble)
-3. NO text after the JSON array (no explanation)
-4. All special characters (backticks, regex patterns, template literals, quotes) are handled automatically by JSON string escaping — NO alternative format
-5. Each search string must appear EXACTLY ONCE in the file — add surrounding context if needed
-6. Replace strings can be ANY length and must be 100% complete with no placeholders
-7. One object per change location — multiple objects for multiple changes
+FILE PATH RULES:
+- Use forward slashes only: "src/hooks/useProject.ts" NOT "src\\\\hooks\\\\useProject.ts"
+- No leading slash: "src/hooks/useProject.ts" NOT "/src/hooks/useProject.ts"
+- No leading dot-slash: "src/hooks/useProject.ts" NOT "./src/hooks/useProject.ts"
 
-IMPORTANT: JSON strings handle all special characters safely. You do NOT need a plain-text format. All characters including backticks \`\`, dollar signs \$, regex patterns, and template literals \$\{...\} must be written as JSON string values (with proper escaping inside quotes).
+SEARCH STRING RULES:
+1. search must appear EXACTLY ONCE in the file — this is the most important rule
+2. Keep search to a SINGLE LINE where possible — single-line search is most reliable
+3. For large files (500+ lines): use 2-3 lines minimum to ensure uniqueness
+4. If multi-line is needed, represent newlines as \\n inside the JSON string — NEVER use literal line breaks inside a JSON string value — this makes JSON invalid
+5. Always copy exact whitespace and indentation — matching is character-for-character
+6. If single-line search might appear more than once, add the line immediately before OR after it to make it unique
 
-Example with backticks in code:
-\`\`\`json
-[
-  {
-    "file": "src/file.ts",
-    "search": "const x = \`template literal\`",
-    "replace": "const x = \`new template\`"
-  }
-]
-\`\`\`
+REPLACE STRING RULES:
+- replace can be ANY length — write the complete replacement with no limits
+- replace must be 100% complete — no placeholders, no '// ... existing code ...', no '// TODO'
+- Every import, every function, every handler must be fully written
+
+JSON ENCODING RULES:
+- Backslashes in code must be doubled in JSON: \\\\\\\\ not \\\\
+- Backticks, template literals, dollar signs are all safe in JSON strings
+- NEVER include a literal line break inside a JSON string value
+
+OTHER RULES:
+- NO prose, NO explanation — ONLY the JSON array
+- NO text before or after the array
+- One object per change location — multiple objects for multiple files or spots
 
 Do NOT invent alternative formats. JSON is sufficient for ALL cases.`
 

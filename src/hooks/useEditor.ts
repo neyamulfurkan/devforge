@@ -204,8 +204,13 @@ export function useEditor(projectId: string) {
           targetPath: string
         ): FileSystemFileHandle | null => {
           for (const node of nodes) {
-            if (node.type === 'file' && node.path === targetPath) {
-              return node.handle as FileSystemFileHandle
+            if (node.type === 'file') {
+              const norm = (p: string) => p.replace(/^\/+/, '').replace(/\\/g, '/')
+              const nodePath = norm(node.path)
+              const target = norm(targetPath)
+              if (nodePath === target || nodePath.endsWith('/' + target)) {
+                return node.handle as FileSystemFileHandle
+              }
             }
             if (node.type === 'folder' && node.children) {
               const found = findHandle(node.children, targetPath)
@@ -228,7 +233,7 @@ export function useEditor(projectId: string) {
     } finally {
       isSavingRef.current = false
     }
-  }, [isLocalMode, openFileId, projectId, fileContent, markClean, currentFile])
+  }, [openFileId, projectId, fileContent, markClean, currentFile])
 
 
 
@@ -726,14 +731,19 @@ export function useEditor(projectId: string) {
 
           const findHandle = (
             nodes: LocalFileNode[],
-            targetId: string
+            targetPath: string
           ): FileSystemFileHandle | null => {
+            const norm = (p: string) => p.replace(/^\/+/, '').replace(/\\/g, '/')
+            const target = norm(targetPath)
             for (const node of nodes) {
-              if (node.type === 'file' && node.path === targetId) {
-                return node.handle as FileSystemFileHandle
+              if (node.type === 'file') {
+                const nodePath = norm(node.path)
+                if (nodePath === target || nodePath.endsWith('/' + target)) {
+                  return node.handle as FileSystemFileHandle
+                }
               }
               if (node.type === 'folder' && node.children) {
-                const found = findHandle(node.children, targetId)
+                const found = findHandle(node.children, targetPath)
                 if (found) return found
               }
             }
