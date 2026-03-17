@@ -649,7 +649,20 @@ export function EditorFileTree({ projectId, onFind, onFindReplace }: EditorFileT
 
       {/* File count + mode indicator */}
       <div className="flex-shrink-0 px-3 py-1.5 border-b border-[var(--border-subtle)] flex items-center justify-between">
-        <span className="text-xs text-[var(--text-tertiary)]">
+        <button
+          type="button"
+          onClick={() => {
+            const { localFolderHandle } = getLocalState(projectId)
+            if (isLocalMode && localFolderHandle) {
+              copyToClipboard(localFolderHandle.name)
+            }
+          }}
+          title={isLocalMode ? `Click to copy folder name` : undefined}
+          className={cn(
+            'text-xs text-[var(--text-tertiary)]',
+            isLocalMode && 'cursor-pointer hover:text-[var(--accent-primary)] transition-colors duration-150 underline-offset-2 hover:underline'
+          )}
+        >
           {isLocalMode
             ? `local folder`
             : `${filteredFiles.length} ${filteredFiles.length === 1 ? 'file' : 'files'}${
@@ -657,7 +670,7 @@ export function EditorFileTree({ projectId, onFind, onFindReplace }: EditorFileT
                   ? ` of ${files.length}`
                   : ''
               }`}
-        </span>
+        </button>
         {isLocalMode && (
           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[var(--accent-light)] text-[var(--accent-primary)]">
             LOCAL
