@@ -104,8 +104,10 @@ export async function POST(
       // Import lazily to avoid pulling into every API route at cold-start
       const { generateTscErrorIdentifyPrompt, generateTscErrorReplacePrompt } =
         await import('@/services/promptGenerator')
-      const { parseTscOutput, formatTscErrorGroups } =
-        await import('@/hooks/useErrors')
+      const { parseTscOutput, formatTscErrorGroups } = await (async () => {
+        const mod = await import('@/hooks/useErrors')
+        return { parseTscOutput: mod.parseTscOutput, formatTscErrorGroups: mod.formatTscErrorGroups }
+      })()
       const { TSC_REQUIRED_GCD_SECTIONS } = await import('@/lib/constants')
 
       // Parse the raw TSC output into structured groups for the prompt

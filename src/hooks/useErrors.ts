@@ -7,6 +7,8 @@
 // FILE: src/app/api/devprobe/ping/route.ts
 // (create this file with the content below)
 
+'use client'
+
 // 1. React imports
 import { useMemo, useEffect, useRef, useState } from 'react'
 
