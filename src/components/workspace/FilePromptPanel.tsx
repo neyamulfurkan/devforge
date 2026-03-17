@@ -159,8 +159,11 @@ function GcdPlusPromptButton({
 
   const handleClick = useCallback(() => {
     const combined = buildCombinedPrompt({ gcdContent, filePrompt, filePath, fileNumber })
+    const shortName = filePath.split('/').pop() ?? filePath
     navigator.clipboard.writeText(combined).then(() => {
       setCopied(true)
+      const { toast } = require('sonner')
+      toast.success(`GCD + FSP copied — ${shortName}`)
       setTimeout(() => setCopied(false), 1500)
     }).catch(() => undefined)
   }, [gcdContent, filePrompt, filePath, fileNumber])
@@ -327,6 +330,9 @@ export function FilePromptPanel({
                           size="sm"
                           label="FSP"
                           aria-label="Copy file-specific prompt only"
+                          successMessage="FSP copied!"
+                          showToast
+                          toastLabel={`FSP — ${file.filePath.split('/').pop() ?? file.filePath}`}
                         />
                         {docData?.rawContent && (
                           <GcdPlusPromptButton
@@ -374,7 +380,14 @@ export function FilePromptPanel({
                             <span className="text-xs font-mono text-[var(--text-secondary)] truncate">
                               {dep}
                             </span>
-                            <CopyButton value={dep} size="sm" aria-label={`Copy ${dep}`} />
+                            <CopyButton
+                              value={dep}
+                              size="sm"
+                              aria-label={`Copy ${dep}`}
+                              successMessage={`${dep.split('/').pop() ?? dep} copied!`}
+                              showToast
+                              toastLabel={dep.split('/').pop() ?? dep}
+                            />
                           </li>
                         ))}
                       </ul>

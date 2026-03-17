@@ -238,7 +238,14 @@ function DocumentTopBar({
         >
           <Clock className="h-4 w-4" />
         </Button>
-        <CopyButton value={rawContent} size="sm" label="Copy full document" />
+        <CopyButton
+          value={rawContent}
+          size="sm"
+          label="Copy GCD"
+          successMessage="GCD copied!"
+          showToast
+          toastLabel="Global Context Document"
+        />
       </div>
     </div>
   )

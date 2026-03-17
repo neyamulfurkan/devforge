@@ -1857,6 +1857,16 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
         const file = await handle.getFile()
         const rawContent = await file.text()
 
+        // Guard: never proceed if the file content is empty — this would wipe the file
+        if (!rawContent.trim()) {
+          newResults.push({
+            file: normalizedEntryFile,
+            status: 'error',
+            message: `Skipped ${normalizedEntryFile} — file appears to be empty on disk. Cannot apply search/replace to an empty file.`,
+          })
+          continue
+        }
+
         // Normalize line endings — fixes Windows CRLF vs Unix LF mismatch
         const normalize = (s: string) => s.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
         const content = normalize(rawContent)
@@ -1866,10 +1876,11 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
         // Count occurrences — warn if ambiguous
         const occurrenceCount = content.split(normalizedSearch).length - 1
         if (occurrenceCount > 1) {
+          // Ambiguous match — report clearly and skip WITHOUT touching the file
           newResults.push({
             file: normalizedEntryFile,
             status: 'error',
-            message: `Ambiguous: "${normalizedSearch.slice(0, 40)}…" found ${occurrenceCount} times in ${normalizedEntryFile} — add 1-2 surrounding lines to make the search unique`,
+            message: `Ambiguous: search text found ${occurrenceCount} times in ${normalizedEntryFile} — file was NOT modified. Add 1-2 surrounding lines to make it unique.`,
           })
           continue
         }
@@ -1930,6 +1941,15 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
             })
             .join('\n')
           const newContent = content.replace(reindentedSearch, reindentedReplace)
+          // Guard against accidentally writing empty content
+          if (!newContent.trim()) {
+            newResults.push({
+              file: normalizedEntryFile,
+              status: 'error',
+              message: `Aborted write to ${normalizedEntryFile} — replacement would have produced an empty file. File was NOT modified.`,
+            })
+            continue
+          }
           const writable = await handle.createWritable()
           await writable.write(newContent)
           await writable.close()
@@ -1941,8 +1961,16 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
           continue
         }
 
-        // Replace and write back
+        // Replace and write back — guard against accidentally writing empty content
         const newContent = content.replace(normalizedSearch, normalizedReplace)
+        if (!newContent.trim()) {
+          newResults.push({
+            file: normalizedEntryFile,
+            status: 'error',
+            message: `Aborted write to ${normalizedEntryFile} — replacement would have produced an empty file. File was NOT modified.`,
+          })
+          continue
+        }
         const writable = await handle.createWritable()
         await writable.write(newContent)
         await writable.close()

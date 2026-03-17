@@ -149,7 +149,13 @@ function JsonRegistryCard({ entry, searchQuery }: { entry: { fileNumber: string;
         {exports.length > 0 && (
           <span className="text-[10px] text-[var(--text-tertiary)] flex-shrink-0">{exports.length} export{exports.length !== 1 ? 's' : ''}</span>
         )}
-        <CopyButton value={raw} size="sm" />
+        <CopyButton
+          value={raw}
+          size="sm"
+          successMessage="JSON entry copied!"
+          showToast
+          toastLabel={`JSON entry ${fileNumber}`}
+        />
       </div>
       {open && (
         <div className="px-3 pb-3 border-t border-[var(--border-subtle)]">

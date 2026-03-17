@@ -165,7 +165,13 @@ export function MetaPromptCard({ projectId }: MetaPromptCardProps): JSX.Element 
               >
                 <span className="font-medium">Prompt ready — paste into Claude</span>
                 <div className="flex items-center gap-2">
-                  <CopyButton value={generatedPrompt} size="sm" />
+                  <CopyButton
+                    value={generatedPrompt}
+                    size="sm"
+                    successMessage="Meta-prompt copied!"
+                    showToast
+                    toastLabel="Meta-Prompt"
+                  />
                   {isOutputExpanded ? (
                     <ChevronUp className="h-3.5 w-3.5" />
                   ) : (

@@ -13,6 +13,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { toast } from 'sonner'
 
 // 4. Internal imports — utils
 import { copyToClipboard } from '@/lib/utils'
@@ -27,6 +28,10 @@ interface CopyButtonProps {
   label?: string
   successMessage?: string
   'aria-label'?: string
+  /** If true, fires a sonner toast on copy in addition to the inline icon swap */
+  showToast?: boolean
+  /** Short name shown in the toast, e.g. "GCD", "FSP", "useProject.ts" */
+  toastLabel?: string
 }
 
 // Size variant config
@@ -52,6 +57,8 @@ export function CopyButton({
   label,
   successMessage,
   'aria-label': ariaLabel,
+  showToast = false,
+  toastLabel,
 }: CopyButtonProps): JSX.Element {
   const [copied, setCopied] = useState(false)
 
@@ -61,6 +68,10 @@ export function CopyButton({
     const success = await copyToClipboard(value)
     if (success) {
       setCopied(true)
+      if (showToast) {
+        const name = toastLabel ?? label ?? ariaLabel ?? 'Content'
+        toast.success(`${name} copied to clipboard`)
+      }
       setTimeout(() => {
         setCopied(false)
       }, COPY_TOOLTIP_DURATION_MS)

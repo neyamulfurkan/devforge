@@ -215,8 +215,10 @@ export function EditorTopBar({ file, onMarkComplete, projectId }: EditorTopBarPr
           value={fileContent}
           size="sm"
           label={file ? `Copy — ${file.filePath.split('/').pop() ?? file.filePath}` : 'Copy All'}
-          successMessage={file ? `Copied ${file.filePath.split('/').pop() ?? file.filePath}!` : 'Copied!'}
+          successMessage={file ? `${file.filePath.split('/').pop() ?? file.filePath} copied!` : 'Copied!'}
           aria-label="Copy file content"
+          showToast
+          toastLabel={file ? file.filePath.split('/').pop() ?? file.filePath : 'File content'}
         />
 
         {/* Mark complete — DB mode only */}
