@@ -155,8 +155,8 @@ export function JsonAppendModal({
         // ✅ Single path: hits /files/[fileId]/json which handles everything
         await appendJsonSummary(matchingFile.id, parsedJson)
 
-        if (matchingFile.status === 'EMPTY') {
-          await updateFileStatus(matchingFile.id, 'CODE_PASTED').catch(() => {
+        if (matchingFile.status !== 'COMPLETE') {
+          await updateFileStatus(matchingFile.id, 'COMPLETE').catch(() => {
             // Non-blocking — file status update failure shouldn't block success
           })
         }

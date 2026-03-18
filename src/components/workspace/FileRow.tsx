@@ -1522,21 +1522,24 @@ export const FileRow = memo(function FileRow({
                     setJsonInput(val)
                     if (jsonState !== 'idle' && jsonState !== 'submitting') { setJsonState('idle'); setJsonError(null) }
                     // Auto-save on valid JSON paste
-                    if (val.trim().endsWith('}')) {
+                    if (val.trim().startsWith('{') && val.trim().endsWith('}')) {
                       setTimeout(async () => {
                         try {
-                          const parsed = JSON.parse(val.trim()) as Record<string, unknown>
-                          if (typeof parsed['file'] === 'string' && typeof parsed['fileNumber'] === 'string') {
+                          const trimmed = val.trim()
+                          const normalized = (() => { try { const p = JSON.parse(trimmed) as Record<string,unknown>; if (!('file' in p) && 'path' in p) { p['file'] = p['path']; delete p['path'] } return p } catch { return null } })()
+                          if (!normalized) return
+                          if (typeof normalized['file'] === 'string' && typeof normalized['fileNumber'] === 'string') {
                             setJsonState('submitting')
                             setJsonError(null)
-                            await appendJsonSummary(file.id, parsed)
+                            await appendJsonSummary(file.id, normalized)
+                            await updateFileStatus(file.id, 'COMPLETE')
                             await queryClient.refetchQueries({ queryKey: ['document', projectId] })
                             await queryClient.refetchQueries({ queryKey: ['files', projectId] })
                             setJsonState('done')
                             setJsonInput('')
                           }
-                        } catch { /* not valid JSON yet */ }
-                      }, 700)
+                        } catch { /* incomplete JSON — keep waiting */ }
+                      }, 800)
                     }
                   }}
                   placeholder={'{\n  "file": "' + file.filePath + '",\n  "fileNumber": "' + file.fileNumber + '",\n  "exports": [...],\n  ...\n}'}
@@ -1557,8 +1560,10 @@ export const FileRow = memo(function FileRow({
                     setJsonState('submitting')
                     setJsonError(null)
                     try {
-                      const parsed = JSON.parse(trimmed)
+                      const parsed = JSON.parse(trimmed) as Record<string, unknown>
+                      if (!('file' in parsed) && 'path' in parsed) { parsed['file'] = parsed['path']; delete parsed['path'] }
                       await appendJsonSummary(file.id, parsed)
+                      await updateFileStatus(file.id, 'COMPLETE')
                       await queryClient.refetchQueries({ queryKey: ['document', projectId] })
                       await queryClient.refetchQueries({ queryKey: ['files', projectId] })
                       setJsonState('done')
@@ -1567,7 +1572,7 @@ export const FileRow = memo(function FileRow({
                       setJsonState('error')
                       setJsonError(
                         err instanceof SyntaxError
-                          ? 'Invalid JSON — check Claude\'s output for syntax errors'
+                          ? 'Invalid JSON — check for syntax errors'
                           : err instanceof Error ? err.message : 'Failed to append'
                       )
                     }

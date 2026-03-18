@@ -296,21 +296,24 @@ export function FileDetailPanel({
                       setJsonInlineInput(val)
                       if (jsonSaveState !== 'idle' && jsonSaveState !== 'submitting') { setJsonSaveState('idle'); setJsonSaveError(null) }
                       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
-                      if (val.trim().endsWith('}')) {
+                      if (val.trim().startsWith('{') && val.trim().endsWith('}')) {
                         autoSaveTimerRef.current = setTimeout(async () => {
                           try {
-                            const parsed = JSON.parse(val.trim()) as Record<string, unknown>
+                            const trimmed = val.trim()
+                            const parsed = JSON.parse(trimmed) as Record<string, unknown>
+                            if (!('file' in parsed) && 'path' in parsed) { parsed['file'] = parsed['path']; delete parsed['path'] }
                             if (typeof parsed['file'] === 'string' && typeof parsed['fileNumber'] === 'string') {
                               setJsonSaveState('submitting')
                               setJsonSaveError(null)
                               await appendJsonSummary(file.id, parsed)
+                              await updateFileStatus(file.id, 'COMPLETE')
                               await queryClient.refetchQueries({ queryKey: ['files', projectId] })
                               await queryClient.refetchQueries({ queryKey: ['document', projectId] })
                               setJsonSaveState('done')
                               setJsonInlineInput('')
                             }
                           } catch { /* incomplete JSON — keep waiting */ }
-                        }, 700)
+                        }, 800)
                       }
                     }}
                     placeholder={`{
