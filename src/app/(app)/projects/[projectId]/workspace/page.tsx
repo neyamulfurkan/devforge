@@ -10,6 +10,7 @@ import dynamic from 'next/dynamic'
 // 3. Third-party library imports
 import { AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 // 4. Internal imports — shared components
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
@@ -1187,12 +1188,6 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
 
   return (
     <>
-    <JsonAppendModal
-      open={jsonModalOpen}
-      onClose={() => { setJsonModalOpen(false); setJsonModalFilePath('') }}
-      projectId={projectId}
-      prefilledFilePath={jsonModalFilePath}
-    />
     <div className="flex h-full w-full overflow-hidden">
       {/* Left: File tree + Apply Fixes panel — resizable + split mode */}
       <div
@@ -1359,6 +1354,8 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
             setJsonModalFilePath(filePath)
             setJsonModalOpen(true)
           }}
+          forceOpenJsonPanel={jsonModalOpen}
+          onJsonPanelOpened={() => setJsonModalOpen(false)}
         />
 
         {/* Monaco editor fills remaining height */}
@@ -1852,6 +1849,11 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
     setCopiedFiles(true)
     setActiveStep(3)
     setTimeout(() => setCopiedFiles(false), 2500)
+    const foundCount = parsedFileList.length - notFound.length
+    toast.success(`${parsedFileList.length} file${parsedFileList.length !== 1 ? 's' : ''} + fix prompt copied`, {
+      description: `${foundCount} file${foundCount !== 1 ? 's' : ''} read from disk${notFound.length > 0 ? ` · ${notFound.length} not found` : ''} · paste into Claude to get the JSON fix array`,
+      duration: 5000,
+    })
   }, [parsedFileList, projectId, getLocalState])
 
   // Walk local file tree to find a handle by path
@@ -2075,6 +2077,14 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
     setCopiedPrompt(key)
     setActivePrompt(key)
     setTimeout(() => setCopiedPrompt(null), 2000)
+    const promptLabels: Record<keyof typeof FIX_PROMPTS, string> = {
+      bug: 'Bug fix prompt',
+      feature_modify: 'Modify feature prompt',
+      feature_add: 'Add feature prompt',
+      refactor: 'Refactor prompt',
+      typescript_fix: 'TypeScript fix prompt',
+    }
+    toast.success(`${promptLabels[key]} copied`, { description: 'Paste into Claude · describe your change · copy Claude\'s JSON response into Step 2 below', duration: 4000 })
   }, [])
 
   const appliedCount = results.filter((r) => r.status === 'applied').length
@@ -2114,6 +2124,8 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
               await navigator.clipboard.writeText(gcd)
               setCopiedGcd(true)
               setTimeout(() => setCopiedGcd(false), 2500)
+              const charCount = Math.ceil(gcd.length / 1000)
+              toast.success('Global Context Document copied', { description: `~${charCount}k characters · paste into Claude before describing your issue`, duration: 4000 })
             }}
             className={cn(
               'w-full flex items-center justify-center gap-2 h-7 rounded-lg text-xs font-medium border transition-all duration-150',
@@ -2143,6 +2155,7 @@ const parsePlainText = React.useCallback((raw: string): FixEntry[] | null => {
               await navigator.clipboard.writeText(GCD_FILE_REQUEST_PROMPT)
               setCopiedPrompt('gcd_request')
               setTimeout(() => setCopiedPrompt(null), 2000)
+              toast.success('File-request prompt copied', { description: 'Paste into Claude after the GCD · Claude will reply with a JSON list of files to read', duration: 4000 })
             }}
             className={cn(
               'w-full flex items-center justify-center gap-2 h-7 rounded-lg text-xs font-medium border transition-all duration-150',

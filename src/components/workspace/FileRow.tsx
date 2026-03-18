@@ -1518,8 +1518,26 @@ export const FileRow = memo(function FileRow({
                 <textarea
                   value={jsonInput}
                   onChange={(e) => {
-                    setJsonInput(e.target.value)
-                    if (jsonState !== 'idle') { setJsonState('idle'); setJsonError(null) }
+                    const val = e.target.value
+                    setJsonInput(val)
+                    if (jsonState !== 'idle' && jsonState !== 'submitting') { setJsonState('idle'); setJsonError(null) }
+                    // Auto-save on valid JSON paste
+                    if (val.trim().endsWith('}')) {
+                      setTimeout(async () => {
+                        try {
+                          const parsed = JSON.parse(val.trim()) as Record<string, unknown>
+                          if (typeof parsed['file'] === 'string' && typeof parsed['fileNumber'] === 'string') {
+                            setJsonState('submitting')
+                            setJsonError(null)
+                            await appendJsonSummary(file.id, parsed)
+                            await queryClient.refetchQueries({ queryKey: ['document', projectId] })
+                            await queryClient.refetchQueries({ queryKey: ['files', projectId] })
+                            setJsonState('done')
+                            setJsonInput('')
+                          }
+                        } catch { /* not valid JSON yet */ }
+                      }, 700)
+                    }
                   }}
                   placeholder={'{\n  "file": "' + file.filePath + '",\n  "fileNumber": "' + file.fileNumber + '",\n  "exports": [...],\n  ...\n}'}
                   rows={5}

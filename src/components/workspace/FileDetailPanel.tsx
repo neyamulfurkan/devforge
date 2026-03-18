@@ -1,10 +1,11 @@
 'use client'
 
 // 1. React imports
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 // 2. Third-party library imports
-import { X, ClipboardCopy } from 'lucide-react'
+import { X, ClipboardCopy, Braces, Loader2, Check } from 'lucide-react'
 
 // 3. Internal imports — UI components
 import {
@@ -22,8 +23,6 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { CodeBlock } from '@/components/shared/CodeBlock'
 
 // 5. Internal imports — workspace components
-import { JsonAppendModal } from '@/components/workspace/JsonAppendModal'
-
 // 6. Internal imports — hooks, types, utils
 import { useFiles } from '@/hooks/useFiles'
 import { useDocument } from '@/hooks/useDocument'
@@ -59,11 +58,15 @@ export function FileDetailPanel({
   projectId,
   onClose,
 }: FileDetailPanelProps): JSX.Element {
-  const { updateFileStatus } = useFiles(projectId)
+  const { updateFileStatus, appendJsonSummary } = useFiles(projectId)
   const { document: projectDocument } = useDocument(projectId)
+  const queryClient = useQueryClient()
   const [notes, setNotes] = useState(file.notes ?? '')
-  const [jsonModalOpen, setJsonModalOpen] = useState(false)
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
+  const [jsonInlineInput, setJsonInlineInput] = useState('')
+  const [jsonSaveState, setJsonSaveState] = useState<'idle' | 'submitting' | 'done' | 'error'>('idle')
+  const [jsonSaveError, setJsonSaveError] = useState<string | null>(null)
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleStatusChange = useCallback(
     async (status: FileStatus): Promise<void> => {
@@ -261,21 +264,18 @@ export function FileDetailPanel({
               </section>
             )}
 
-            {/* JSON Summary */}
+            {/* JSON Summary — inline, auto-saves on valid JSON paste */}
             <section>
               <div className="flex items-center justify-between mb-1.5">
-                <p className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">
-                  JSON Summary
+                <p className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider flex items-center gap-1.5">
+                  <Braces className="h-3 w-3" />
+                  JSON Registry
                 </p>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setJsonModalOpen(true)}
-                  className="h-6 text-xs text-[var(--accent-primary)] hover:text-[var(--accent-hover)] px-2"
-                >
-                  {file.jsonSummary ? 'Update' : 'Append JSON'}
-                </Button>
+                {file.jsonSummary && (
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[var(--status-complete-bg)] text-[var(--status-complete)]">
+                    ✓ In Section 11
+                  </span>
+                )}
               </div>
               {file.jsonSummary ? (
                 <CodeBlock
@@ -285,9 +285,70 @@ export function FileDetailPanel({
                   className="text-xs"
                 />
               ) : (
-                <p className="text-xs text-[var(--text-tertiary)] italic">
-                  No JSON appended yet.
-                </p>
+                <div className="space-y-2">
+                  <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
+                    Paste the JSON Claude outputs after the file code — it auto-saves to Section 11.
+                  </p>
+                  <textarea
+                    value={jsonInlineInput}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setJsonInlineInput(val)
+                      if (jsonSaveState !== 'idle' && jsonSaveState !== 'submitting') { setJsonSaveState('idle'); setJsonSaveError(null) }
+                      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
+                      if (val.trim().endsWith('}')) {
+                        autoSaveTimerRef.current = setTimeout(async () => {
+                          try {
+                            const parsed = JSON.parse(val.trim()) as Record<string, unknown>
+                            if (typeof parsed['file'] === 'string' && typeof parsed['fileNumber'] === 'string') {
+                              setJsonSaveState('submitting')
+                              setJsonSaveError(null)
+                              await appendJsonSummary(file.id, parsed)
+                              await queryClient.refetchQueries({ queryKey: ['files', projectId] })
+                              await queryClient.refetchQueries({ queryKey: ['document', projectId] })
+                              setJsonSaveState('done')
+                              setJsonInlineInput('')
+                            }
+                          } catch { /* incomplete JSON — keep waiting */ }
+                        }, 700)
+                      }
+                    }}
+                    placeholder={`{
+  "file": "${file.filePath}",
+  "fileNumber": "${file.fileNumber}",
+  ...
+}`}
+                    rows={5}
+                    className={cn(
+                      'w-full resize-y rounded-md border px-3 py-2 font-mono text-xs',
+                      'bg-[var(--bg-input)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]',
+                      'outline-none transition-colors duration-150',
+                      jsonSaveState === 'done'
+                        ? 'border-[var(--status-complete)]'
+                        : jsonSaveState === 'error'
+                        ? 'border-[var(--status-error)]'
+                        : 'border-[var(--border-default)] focus:border-[var(--accent-primary)]'
+                    )}
+                  />
+                  <div className="flex items-center gap-2 min-h-[20px]">
+                    {jsonSaveState === 'submitting' && (
+                      <span className="flex items-center gap-1.5 text-[11px] text-[var(--accent-primary)]">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Saving to Section 11…
+                      </span>
+                    )}
+                    {jsonSaveState === 'done' && (
+                      <span className="flex items-center gap-1.5 text-[11px] text-[var(--status-complete)]">
+                        <Check className="h-3 w-3" /> Saved to Section 11 ✓
+                      </span>
+                    )}
+                    {jsonSaveState === 'error' && jsonSaveError && (
+                      <span className="text-[11px] text-[var(--status-error)]">{jsonSaveError}</span>
+                    )}
+                    {jsonSaveState === 'idle' && jsonInlineInput.trim() && (
+                      <span className="text-[11px] text-[var(--text-tertiary)]">Paste complete JSON to auto-save…</span>
+                    )}
+                  </div>
+                </div>
               )}
             </section>
 
@@ -325,15 +386,7 @@ export function FileDetailPanel({
         </SheetContent>
       </Sheet>
 
-      {/* JSON append modal */}
-      {jsonModalOpen && (
-        <JsonAppendModal
-          open={jsonModalOpen}
-          onClose={() => setJsonModalOpen(false)}
-          projectId={projectId}
-          prefilledFilePath={file.filePath}
-        />
-      )}
+
     </>
   )
 }

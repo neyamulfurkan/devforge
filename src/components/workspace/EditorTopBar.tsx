@@ -1,7 +1,7 @@
 'use client'
 
 // 1. React imports
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 
 // 2. Third-party imports
 import { Lock, Unlock, CheckSquare, Braces, ChevronDown, ChevronUp, Check, Loader2 } from 'lucide-react'
@@ -101,9 +101,11 @@ interface EditorTopBarProps {
   onMarkComplete: () => void
   projectId: string
   onOpenJsonModal?: (filePath: string) => void
+  forceOpenJsonPanel?: boolean
+  onJsonPanelOpened?: () => void
 }
 
-export function EditorTopBar({ file, onMarkComplete, projectId, onOpenJsonModal }: EditorTopBarProps): JSX.Element {
+export function EditorTopBar({ file, onMarkComplete, projectId, onOpenJsonModal, forceOpenJsonPanel, onJsonPanelOpened }: EditorTopBarProps): JSX.Element {
   const { isReadOnly, toggleReadOnly, fileContent } = useEditorStore()
   const { isLocalMode, openLocalPath } = getProjectLocalState(projectId)
   const [isMarkingComplete, setIsMarkingComplete] = useState(false)
@@ -113,6 +115,15 @@ export function EditorTopBar({ file, onMarkComplete, projectId, onOpenJsonModal 
   const [jsonError, setJsonError] = useState<string | null>(null)
   const { appendJsonSummary } = useFiles(projectId)
   const queryClient = useQueryClient()
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Auto-open inline panel when triggered externally (e.g. after code paste)
+  useEffect(() => {
+    if (forceOpenJsonPanel && file?.id) {
+      setJsonPanelOpen(true)
+      onJsonPanelOpened?.()
+    }
+  }, [forceOpenJsonPanel, file?.id, onJsonPanelOpened])
 
   const handleMarkComplete = useCallback(async () => {
     if (isMarkingComplete) return
@@ -365,8 +376,29 @@ export function EditorTopBar({ file, onMarkComplete, projectId, onOpenJsonModal 
               <textarea
                 value={jsonInput}
                 onChange={(e) => {
-                  setJsonInput(e.target.value)
-                  if (jsonState !== 'idle') { setJsonState('idle'); setJsonError(null) }
+                  const val = e.target.value
+                  setJsonInput(val)
+                  if (jsonState !== 'idle' && jsonState !== 'submitting') { setJsonState('idle'); setJsonError(null) }
+                  // Auto-save: trigger when pasted text looks like complete JSON
+                  if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
+                  if (val.trim().endsWith('}') && file?.id) {
+                    autoSaveTimerRef.current = setTimeout(async () => {
+                      try {
+                        const parsed = JSON.parse(val.trim()) as Record<string, unknown>
+                        if (typeof parsed['file'] === 'string' && typeof parsed['fileNumber'] === 'string') {
+                          setJsonState('submitting')
+                          setJsonError(null)
+                          await appendJsonSummary(file.id, parsed)
+                          await onMarkComplete()
+                          await queryClient.refetchQueries({ queryKey: ['document', projectId] })
+                          await queryClient.refetchQueries({ queryKey: ['files', projectId] })
+                          setJsonState('done')
+                          setJsonInput('')
+                          setTimeout(() => { setJsonState('idle'); setJsonPanelOpen(false) }, 1500)
+                        }
+                      } catch { /* not valid JSON yet — wait for more input */ }
+                    }, 700)
+                  }
                 }}
                 placeholder={`{\n  "file": "${file.filePath}",\n  "fileNumber": "${file.fileNumber}",\n  "exports": [...],\n  ...\n}`}
                 rows={4}
