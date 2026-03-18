@@ -1505,9 +1505,40 @@ export const FileRow = memo(function FileRow({
             }
           >
             {hasJsonSummary ? (
-              <pre className="text-xs font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-32 overflow-y-auto leading-relaxed">
-                {JSON.stringify(file.jsonSummary, null, 2)}
-              </pre>
+              <div className="space-y-2">
+                <pre className="text-xs font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-32 overflow-y-auto leading-relaxed">
+                  {JSON.stringify(file.jsonSummary, null, 2)}
+                </pre>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async (e) => {
+                      e.stopPropagation()
+                      try {
+                        const res = await fetch(`/api/projects/${projectId}/files/${file.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ jsonSummary: null }),
+                        })
+                        if (!res.ok) throw new Error('Failed to clear')
+                        await queryClient.refetchQueries({ queryKey: ['files', projectId] })
+                        setJsonInput('')
+                        setJsonState('idle')
+                        setJsonError(null)
+                      } catch (err) {
+                        setJsonError(err instanceof Error ? err.message : 'Failed to clear')
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-md text-[11px] font-medium border border-[var(--status-error)]/30 bg-[var(--status-error-bg)] text-[var(--status-error)] hover:bg-[var(--status-error)] hover:text-white transition-all duration-150"
+                  >
+                    Clear JSON
+                  </button>
+                  <span className="text-[10px] text-[var(--text-tertiary)]">Remove to paste a corrected entry</span>
+                </div>
+                {jsonError && (
+                  <p className="text-[11px] text-[var(--status-error)]">{jsonError}</p>
+                )}
+              </div>
             ) : (
               <div className="space-y-2">
                 {/* Instruction text */}
