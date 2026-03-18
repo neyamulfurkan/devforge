@@ -100,9 +100,10 @@ interface EditorTopBarProps {
   file: FileWithContent | null
   onMarkComplete: () => void
   projectId: string
+  onOpenJsonModal?: (filePath: string) => void
 }
 
-export function EditorTopBar({ file, onMarkComplete, projectId }: EditorTopBarProps): JSX.Element {
+export function EditorTopBar({ file, onMarkComplete, projectId, onOpenJsonModal }: EditorTopBarProps): JSX.Element {
   const { isReadOnly, toggleReadOnly, fileContent } = useEditorStore()
   const { isLocalMode, openLocalPath } = getProjectLocalState(projectId)
   const [isMarkingComplete, setIsMarkingComplete] = useState(false)
@@ -267,6 +268,21 @@ export function EditorTopBar({ file, onMarkComplete, projectId }: EditorTopBarPr
         {/* Divider */}
         <div className="h-4 w-px bg-[var(--border-subtle)]" aria-hidden="true" />
 
+        {/* JSON Registry button — local mode: opens modal */}
+        {isLocalMode && openLocalPath && onOpenJsonModal && (
+          <button
+            type="button"
+            onClick={() => onOpenJsonModal(openLocalPath)}
+            title="Append JSON registry entry to Section 11"
+            className={cn(
+              'flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-all duration-150',
+              'border border-[var(--border-default)] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] hover:border-[var(--accent-border)] hover:bg-[var(--accent-light)]'
+            )}
+          >
+            <Braces className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">JSON</span>
+          </button>
+        )}
         {/* JSON Registry button — always shown when DB file is open */}
         {file && file.id && (
           <button

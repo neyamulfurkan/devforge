@@ -669,11 +669,34 @@ function GitPushButton({ projectId }: { projectId: string }): JSX.Element {
   const [commitMsg, setCommitMsg] = React.useState('')
   const [copyState, setCopyState] = React.useState<'idle' | 'done'>('idle')
   const [copiedPath, setCopiedPath] = React.useState(false)
+  const [editingPath, setEditingPath] = React.useState(false)
+  const [folderPath, setFolderPath] = React.useState<string>('')
+  const pathInputRef = React.useRef<HTMLInputElement>(null)
 
-  // Auto-populate commit message from last Claude response pasted in ApplyFixes
-  // User can also type manually
   const { getLocalState: getGitLocalState } = useEditorStore()
   const { localFolderHandle } = getGitLocalState(projectId)
+
+  // Load saved full path from localStorage; fall back to handle name
+  React.useEffect(() => {
+    if (!localFolderHandle) return
+    const stored = localStorage.getItem(`devforge_folder_path_${projectId}`)
+    setFolderPath(stored ?? localFolderHandle.name)
+  }, [localFolderHandle, projectId])
+
+  // Focus input when editing starts
+  React.useEffect(() => {
+    if (editingPath) pathInputRef.current?.focus()
+  }, [editingPath])
+
+  const savePath = React.useCallback((value: string) => {
+    const trimmed = value.trim()
+    if (trimmed) {
+      localStorage.setItem(`devforge_folder_path_${projectId}`, trimmed)
+      setFolderPath(trimmed)
+    }
+    setEditingPath(false)
+  }, [projectId])
+
   const handleCopy = React.useCallback(async () => {
     const msg = commitMsg.trim() || 'update'
     const cmd = `git add . && git commit -m "${msg.replace(/"/g, "'")}" && git push`
@@ -685,23 +708,48 @@ function GitPushButton({ projectId }: { projectId: string }): JSX.Element {
   return (
     <div className="flex items-center gap-1.5 border-t border-[var(--border-subtle)] px-3 py-2 bg-[var(--bg-primary)]">
       {localFolderHandle && (
-        <button
-          type="button"
-          onClick={async () => {
-            await navigator.clipboard.writeText(localFolderHandle.name)
-            setCopiedPath(true)
-            setTimeout(() => setCopiedPath(false), 2000)
-          }}
-          title={`Copy folder name: ${localFolderHandle.name}`}
-          className={cn(
-            'flex-shrink-0 flex items-center gap-1 h-6 px-2 rounded text-[10px] font-mono font-medium transition-all duration-150 border',
-            copiedPath
-              ? 'bg-[var(--status-complete-bg)] border-[var(--status-complete)]/40 text-[var(--status-complete)]'
-              : 'bg-[var(--bg-quaternary)] border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-emphasis)]'
-          )}
-        >
-          {copiedPath ? <><CheckCheck className="h-3 w-3" /> Copied!</> : <><Copy className="h-3 w-3" /> {localFolderHandle.name}</>}
-        </button>
+        editingPath ? (
+          <input
+            ref={pathInputRef}
+            type="text"
+            defaultValue={folderPath}
+            placeholder={`e.g. C:\\projects\\${localFolderHandle.name}`}
+            onBlur={(e) => savePath(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') savePath((e.target as HTMLInputElement).value)
+              if (e.key === 'Escape') setEditingPath(false)
+            }}
+            className="flex-shrink-0 h-6 px-2 rounded text-[10px] font-mono border border-[var(--accent-border)] bg-[var(--bg-input)] text-[var(--text-primary)] outline-none focus:ring-1 focus:ring-[var(--accent-primary)] min-w-[160px] max-w-[260px]"
+          />
+        ) : (
+          <div className="flex-shrink-0 flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={async () => {
+                await navigator.clipboard.writeText(folderPath)
+                setCopiedPath(true)
+                setTimeout(() => setCopiedPath(false), 2000)
+              }}
+              title={`Copy full path: ${folderPath}`}
+              className={cn(
+                'flex items-center gap-1 h-6 px-2 rounded-l text-[10px] font-mono font-medium transition-all duration-150 border-y border-l',
+                copiedPath
+                  ? 'bg-[var(--status-complete-bg)] border-[var(--status-complete)]/40 text-[var(--status-complete)]'
+                  : 'bg-[var(--bg-quaternary)] border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-emphasis)]'
+              )}
+            >
+              {copiedPath ? <><CheckCheck className="h-3 w-3" /> Copied!</> : <><Copy className="h-3 w-3" /> <span className="max-w-[140px] truncate">{folderPath}</span></>}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditingPath(true)}
+              title="Edit full folder path"
+              className="flex items-center justify-center h-6 w-6 rounded-r border border-[var(--border-default)] bg-[var(--bg-quaternary)] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] hover:border-[var(--accent-border)] hover:bg-[var(--accent-light)] transition-all duration-150 text-[10px]"
+            >
+              ✎
+            </button>
+          </div>
+        )
       )}
       <GitCommit className="h-3 w-3 text-[var(--text-tertiary)] flex-shrink-0" />
       <input
@@ -1307,6 +1355,10 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
           file={openFile as Parameters<typeof EditorTopBar>[0]['file']}
           onMarkComplete={handleMarkComplete}
           projectId={projectId}
+          onOpenJsonModal={(filePath) => {
+            setJsonModalFilePath(filePath)
+            setJsonModalOpen(true)
+          }}
         />
 
         {/* Monaco editor fills remaining height */}
