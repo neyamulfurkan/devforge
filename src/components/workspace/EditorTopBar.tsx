@@ -101,11 +101,10 @@ interface EditorTopBarProps {
   onMarkComplete: () => void
   projectId: string
   onOpenJsonModal?: (filePath: string) => void
-  forceOpenJsonPanel?: boolean
-  onJsonPanelOpened?: () => void
+  
 }
 
-export function EditorTopBar({ file, onMarkComplete, projectId, onOpenJsonModal, forceOpenJsonPanel, onJsonPanelOpened }: EditorTopBarProps): JSX.Element {
+export function EditorTopBar({ file, onMarkComplete, projectId, onOpenJsonModal }: EditorTopBarProps): JSX.Element {
   const { isReadOnly, toggleReadOnly, fileContent } = useEditorStore()
   const { isLocalMode, openLocalPath } = getProjectLocalState(projectId)
   const [isMarkingComplete, setIsMarkingComplete] = useState(false)
@@ -117,13 +116,7 @@ export function EditorTopBar({ file, onMarkComplete, projectId, onOpenJsonModal,
   const queryClient = useQueryClient()
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Auto-open inline panel when triggered externally (e.g. after code paste)
-  useEffect(() => {
-    if (forceOpenJsonPanel && file?.id) {
-      setJsonPanelOpen(true)
-      onJsonPanelOpened?.()
-    }
-  }, [forceOpenJsonPanel, file?.id, onJsonPanelOpened])
+  
 
   const handleMarkComplete = useCallback(async () => {
     if (isMarkingComplete) return

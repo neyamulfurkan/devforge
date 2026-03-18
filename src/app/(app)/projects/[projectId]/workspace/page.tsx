@@ -1354,8 +1354,6 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
             setJsonModalFilePath(filePath)
             setJsonModalOpen(true)
           }}
-          forceOpenJsonPanel={jsonModalOpen}
-          onJsonPanelOpened={() => setJsonModalOpen(false)}
         />
 
         {/* Monaco editor fills remaining height */}
@@ -1366,10 +1364,7 @@ function EditorLayout({ projectId }: EditorLayoutProps): JSX.Element {
             isLocalMode={isLocalMode}
             openLocalPath={openLocalPath}
             onEditorMount={handleEditorMount}
-            onCodePasted={(filePath) => {
-              setJsonModalFilePath(filePath)
-              setJsonModalOpen(true)
-            }}
+            onCodePasted={undefined}
           />
         </div>
       </div>
